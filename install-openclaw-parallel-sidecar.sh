@@ -399,10 +399,12 @@ if [[ "${REPLY,,}" =~ ^(y|yes)$ ]]; then
       j.gateway.http.endpoints.chatCompletions.enabled = true;
       fs.writeFileSync(p, JSON.stringify(j, null, 2));
     "
-    echo "Config updated. Restarting gateway..."
-    openclaw gateway stop 2>/dev/null || true
-    openclaw gateway &
-    echo "Gateway starting in background."
+    echo "✓ Config updated (HTTP chat endpoint enabled)."
+    echo ""
+    echo "⚠️  IMPORTANT: Restart your gateway for changes to take effect:"
+    echo "   1. Stop the gateway (Ctrl+C if running in foreground, or: kill \$(pgrep -f openclaw-gateway))"
+    echo "   2. Start it again: openclaw gateway"
+    echo ""
   else
     echo "Config not found at $CONFIG_FILE. Enable gateway.http.endpoints.chatCompletions.enabled manually and run: openclaw gateway stop && openclaw gateway"
   fi

@@ -375,10 +375,12 @@ if ($reply -match '^[yY]') {
   if (Test-Path $ConfigFile) {
     $env:OPENCLAW_CONFIG_PATH = $ConfigFile
     node -e "const fs=require('fs');const p=process.env.OPENCLAW_CONFIG_PATH;let j={};try{j=JSON.parse(fs.readFileSync(p,'utf8'));}catch(e){};j.gateway=j.gateway||{};j.gateway.http=j.gateway.http||{};j.gateway.http.endpoints=j.gateway.http.endpoints||{};j.gateway.http.endpoints.chatCompletions=j.gateway.http.endpoints.chatCompletions||{};j.gateway.http.endpoints.chatCompletions.enabled=true;fs.writeFileSync(p,JSON.stringify(j,null,2));"
-    Write-Host "Config updated. Restarting gateway..."
-    & openclaw gateway stop 2>$null
-    Start-Process -FilePath "openclaw" -ArgumentList "gateway" -WindowStyle Hidden
-    Write-Host "Gateway starting in background."
+    Write-Host "✓ Config updated (HTTP chat endpoint enabled)."
+    Write-Host ""
+    Write-Host "⚠️  IMPORTANT: Restart your gateway for changes to take effect:"
+    Write-Host "   1. Stop the gateway (Ctrl+C if running in foreground, or: Stop-Process -Name openclaw-gateway)"
+    Write-Host "   2. Start it again: openclaw gateway"
+    Write-Host ""
   } else {
     Write-Host "Config not found at $ConfigFile. Enable gateway.http.endpoints.chatCompletions.enabled manually and run: openclaw gateway stop; openclaw gateway"
   }
