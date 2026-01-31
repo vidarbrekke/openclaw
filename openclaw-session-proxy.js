@@ -66,31 +66,40 @@ function shouldInjectSessionKey(method, path) {
 const server = http.createServer((req, res) => {
   const reqUrl = req.url || "/";
   
-  // Handle /new - generate session, inject token, redirect (Control UI reads ?token= from URL)
+  // Handle /new - generate session, inject token, redirect to path-based URL
+  // Path /s/:sessionKey gives each tab its own cookie scope (Path=/s/xxx) so tabs don't overwrite each other
   if (reqUrl === "/new" || reqUrl === "/new/") {
     const sessionKey = generateSessionKey();
     const params = new URLSearchParams({ session: sessionKey });
     if (GATEWAY_TOKEN) params.set("token", GATEWAY_TOKEN);
+    const targetPath = `/s/${encodeURIComponent(sessionKey)}?${params.toString()}`;
+    const cookiePath = `/s/${encodeURIComponent(sessionKey)}`;
     res.writeHead(302, {
-      Location: `/?${params.toString()}`,
-      "Set-Cookie": `openclaw_session=${encodeURIComponent(sessionKey)}; Path=/; SameSite=Lax`,
+      Location: targetPath,
+      "Set-Cookie": `openclaw_session=${encodeURIComponent(sessionKey)}; Path=${cookiePath}; SameSite=Lax`,
     });
     res.end();
     return;
   }
 
-  // Extract session key from URL param or cookie
-  const sessionFromUrl = extractSessionFromUrl(reqUrl);
-  const sessionFromCookie = extractSessionFromCookie(req.headers.cookie);
-  const sessionKey = sessionFromUrl || sessionFromCookie;
-
-  // If we have a session in URL but not cookie, set the cookie
-  if (sessionFromUrl && !sessionFromCookie) {
-    res.setHeader("Set-Cookie", `openclaw_session=${encodeURIComponent(sessionFromUrl)}; Path=/; SameSite=Lax`);
+  // Extract session key from path /s/:sessionKey or URL param or cookie
+  let sessionKey = null;
+  let targetPath = reqUrl;
+  const pathMatch = reqUrl.match(/^\/s\/([^/?#]+)(\/?.*)$/);
+  if (pathMatch) {
+    sessionKey = decodeURIComponent(pathMatch[1]);
+    targetPath = pathMatch[2] || "/"; // strip /s/:sessionKey, forward rest to gateway
+  }
+  if (!sessionKey) {
+    sessionKey = extractSessionFromUrl(reqUrl) || extractSessionFromCookie(req.headers.cookie);
+  }
+  // When using /s/:sessionKey, set cookie for that path so subrequests (assets, etc.) get it
+  if (pathMatch && sessionKey) {
+    const cookiePath = `/s/${encodeURIComponent(sessionKey)}`;
+    res.setHeader("Set-Cookie", `openclaw_session=${encodeURIComponent(sessionKey)}; Path=${cookiePath}; SameSite=Lax`);
   }
 
-  // Build proxy request options
-  const targetPath = reqUrl;
+  // Build proxy request options (targetPath may have been rewritten above)
   const proxyHeaders = { ...req.headers };
   
   // Update host header
@@ -111,10 +120,27 @@ const server = http.createServer((req, res) => {
   };
 
   const proxyReq = gatewayProtocol.request(proxyOptions, (proxyRes) => {
-    // Copy response headers
     const responseHeaders = { ...proxyRes.headers };
-    
-    // Preserve any cookies from gateway but don't overwrite our session cookie
+    const isHtml = (responseHeaders["content-type"] || "").includes("text/html");
+
+    if (isHtml && pathMatch && sessionKey) {
+      // Inject base path so SPA routing stays under /s/:sessionKey (preserves path-scoped cookie)
+      const basePath = `/s/${encodeURIComponent(sessionKey)}`;
+      delete responseHeaders["content-length"];
+      res.writeHead(proxyRes.statusCode, responseHeaders);
+      let buf = "";
+      proxyRes.on("data", (chunk) => {
+        buf += chunk.toString();
+      });
+      proxyRes.on("end", () => {
+        const rewritten = buf.replace(
+          /__OPENCLAW_CONTROL_UI_BASE_PATH__\s*=\s*""/g,
+          `__OPENCLAW_CONTROL_UI_BASE_PATH__="${basePath}"`
+        );
+        res.end(rewritten);
+      });
+      return;
+    }
     res.writeHead(proxyRes.statusCode, responseHeaders);
     proxyRes.pipe(res);
   });
