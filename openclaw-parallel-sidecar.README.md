@@ -15,6 +15,12 @@ Run multiple isolated chat lanes in parallel without forking the Control UI.
 3. Ensure `/v1/models` is reachable from the gateway
    - If not, set `OPENCLAW_MODEL` to a known model ID
 
+## Install (one-liner)
+```bash
+curl -fsSL https://raw.githubusercontent.com/vidarbrekke/openclaw/main/install-openclaw-parallel-sidecar.sh | bash
+```
+Installs into `~/.openclaw/sidecar/parallel-chat`. On Windows (Git Bash) the script forwards to PowerShell; otherwise run `install-openclaw-parallel-sidecar.ps1` manually.
+
 ## Install (manual)
 ```bash
 mkdir -p ~/.openclaw/sidecar/parallel-chat
