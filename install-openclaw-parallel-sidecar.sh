@@ -221,7 +221,7 @@ function appendLine(text){
 }
 
 function appendUser(text){
-  appendLine(`\nUSER: ${text}\n`);
+  appendLine(\`\nUSER: \${text}\n\`);
 }
 
 function beginAssistant(){
@@ -286,7 +286,7 @@ async function send(){
 
     if (!res.ok || !res.body) {
       const t = await res.text().catch(() => '');
-      appendAssistantDelta(`\n[HTTP ${res.status}] ${t}\n`);
+      appendAssistantDelta(\`\n[HTTP \${res.status}] \${t}\n\`);
       endAssistant();
       return;
     }
@@ -330,7 +330,7 @@ async function send(){
       endAssistant();
       if (assistantText) messages.push({ role: 'assistant', content: assistantText });
     } else {
-      appendAssistantDelta(`\n[error] ${e?.message || e}\n`);
+      appendAssistantDelta(\`\n[error] \${e?.message || e}\n\`);
       endAssistant();
     }
   } finally {
@@ -425,7 +425,9 @@ if [[ "$enable_http" -eq 1 && -f "$CONFIG_FILE" ]]; then
     sleep 2
     nohup openclaw gateway >/dev/null 2>&1 &
     echo "Starting sidecar in background..."
-    ( cd "$TARGET_DIR" && OPENCLAW_GATEWAY_URL="http://127.0.0.1:${GW_PORT}" PORT="$SIDECAR_PORT" nohup npm start >/dev/null 2>&1 & )
+    SIDECAR_LOG="${TARGET_DIR}/start.log"
+    ( cd "$TARGET_DIR" && OPENCLAW_GATEWAY_URL="http://127.0.0.1:${GW_PORT}" PORT="$SIDECAR_PORT" nohup npm start >> "$SIDECAR_LOG" 2>&1 & )
+    echo "  (logs: $SIDECAR_LOG if it fails)"
     echo ""
 elif [[ "$enable_http" -eq 1 ]]; then
   echo "Config not found at $CONFIG_FILE. Enable gateway.http.endpoints.chatCompletions.enabled manually, then stop the gateway (Ctrl+C) and run: openclaw gateway"

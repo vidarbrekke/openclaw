@@ -141,6 +141,15 @@ openclaw gateway
 
 ## Troubleshooting
 
+- **No page at http://127.0.0.1:3005/new or connection refused**  
+  The sidecar is not running. Start it manually (so you can see any errors):
+  ```bash
+  cd ~/.openclaw/sidecar/parallel-chat
+  export OPENCLAW_GATEWAY_URL="http://127.0.0.1:18789"
+  npm start
+  ```
+  Then open http://127.0.0.1:3005/new again. If the installer started it in the background, it may have exited (e.g. missing env or port in use); running it in the foreground shows the cause.
+
 - **Sidecar says "Failed to load models" or chat doesn't work**  
   Make sure the gateway HTTP chat endpoint is enabled and the gateway has been restarted. You can enable it yourself in `~/.openclaw/openclaw.json` (macOS/Linux) or `%USERPROFILE%\.openclaw\openclaw.json` (Windows) by adding or setting:
   ```json
