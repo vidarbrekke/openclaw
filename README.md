@@ -16,7 +16,7 @@ Community add-ons and docs for [OpenClaw](https://github.com/mariozechner/opencl
 **macOS / Linux:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vidarbrekke/openclaw/v0.1.2/install-openclaw-parallel-sidecar.sh | bash
+curl -fsSL https://raw.githubusercontent.com/vidarbrekke/openclaw/v0.1.3/install-openclaw-parallel-sidecar.sh | bash
 ```
 
 The installer automatically enables the gateway HTTP endpoint (answer "n" if you run it interactively and want to skip this).
