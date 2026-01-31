@@ -16,8 +16,10 @@ Community add-ons and docs for [OpenClaw](https://github.com/mariozechner/opencl
 **macOS / Linux:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vidarbrekke/openclaw/main/install-openclaw-parallel-sidecar.sh | bash
+curl -fsSL https://raw.githubusercontent.com/vidarbrekke/openclaw/v0.1.1/install-openclaw-parallel-sidecar.sh | bash
 ```
+
+When you use `curl ... | bash`, the script runs non-interactively (no prompt). To enable the HTTP endpoint, run the installer again in a terminal (e.g. `bash install-openclaw-parallel-sidecar.sh`) and answer **y**, or edit `~/.openclaw/openclaw.json` yourself.
 
 **Windows:**  
 Open PowerShell in the folder with the installer and run:
@@ -37,10 +39,8 @@ The installer will ask:
 **“Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar; gateway will be restarted) [y/N]”**
 
 - **Say Yes (y)** if you want the sidecar to work without any extra config.  
-  The script will turn on the HTTP chat endpoint in your OpenClaw config and then run `openclaw gateway stop` and `openclaw gateway` so the change takes effect.
+  The script will turn on the HTTP chat endpoint in your OpenClaw config. You must **restart the gateway** yourself (e.g. Ctrl+C then `openclaw gateway`) for the change to take effect.
 - **Say No (N)** if you prefer to change config or restart the gateway yourself.
-
-You don’t need to do anything else for this step; if you say yes, the script does it for you.
 
 ---
 
@@ -50,7 +50,7 @@ You don’t need to do anything else for this step; if you say yes, the script d
    ```bash
    openclaw gateway
    ```
-   If you answered **Yes** to the question above, the script already ran `openclaw gateway stop` and then `openclaw gateway` for you.
+   If you answered **Yes** to the question above, restart the gateway (Ctrl+C if it’s in the foreground, then run `openclaw gateway` again) so the HTTP endpoint is enabled.
 
 2. **Set the gateway URL** (in the same terminal or in your shell profile):
    ```bash

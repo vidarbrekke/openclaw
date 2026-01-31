@@ -381,13 +381,18 @@ EOF
 cd "$TARGET_DIR"
 npm install
 
-# Optional: enable gateway HTTP endpoint and restart gateway
+# Optional: enable gateway HTTP endpoint (only when interactive; skip when piped e.g. curl|bash)
 CONFIG_FILE="${HOME}/.openclaw/openclaw.json"
-echo ""
-read -r -p "Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar; gateway will be restarted) [y/N] " REPLY
-case "$REPLY" in
-  [yY]|[yY][eE][sS])
-  if [[ -f "$CONFIG_FILE" ]]; then
+enable_http=0
+if [[ -t 0 ]]; then
+  echo ""
+  read -r -p "Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar; gateway will be restarted) [y/N] " REPLY
+  case "$REPLY" in
+    [yY]) enable_http=1 ;;
+    [yY][eE][sS]) enable_http=1 ;;
+  esac
+fi
+if [[ "$enable_http" -eq 1 && -f "$CONFIG_FILE" ]]; then
     node -e "
       const fs = require('fs');
       const p = process.env.HOME + '/.openclaw/openclaw.json';
@@ -406,13 +411,15 @@ case "$REPLY" in
     echo "   1. Stop the gateway (Ctrl+C if running in foreground, or: kill \$(pgrep -f openclaw-gateway))"
     echo "   2. Start it again: openclaw gateway"
     echo ""
-  else
-    echo "Config not found at $CONFIG_FILE. Enable gateway.http.endpoints.chatCompletions.enabled manually, then stop the gateway (Ctrl+C) and run: openclaw gateway"
-  fi
-  ;;
-esac
+elif [[ "$enable_http" -eq 1 ]]; then
+  echo "Config not found at $CONFIG_FILE. Enable gateway.http.endpoints.chatCompletions.enabled manually, then stop the gateway (Ctrl+C) and run: openclaw gateway"
+fi
 
 echo ""
+if [[ ! -t 0 ]]; then
+  echo "Tip: To enable the gateway HTTP endpoint, run this script again in a terminal (not via curl|bash) and answer y, or edit openclaw.json manually."
+  echo ""
+fi
 cat <<'EOF'
 Install complete.
 
