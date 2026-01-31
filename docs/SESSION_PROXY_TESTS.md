@@ -2,7 +2,7 @@
 
 Tests run against a local gateway (127.0.0.1:18789) and the Session Proxy (127.0.0.1:3010).
 
-## Verified
+## Verified (automated + Playwright + gateway JS inspection)
 
 | Test | Result |
 |------|--------|
@@ -11,19 +11,14 @@ Tests run against a local gateway (127.0.0.1:18789) and the Session Proxy (127.0
 | **Gateway reachable** | OK – GET / and GET /v1/models return 200 |
 | **Proxy forwards GET /** | OK – returns real Control UI HTML (`<title>OpenClaw Control</title>`) |
 | **Proxy forwards assets** | OK – GET /assets/index-*.js returns 200 |
+| **Control UI WebSocket URL** | OK – Control UI builds WebSocket URL from `location`: `gatewayUrl:\`\${location.protocol==="https:"?"wss":"ws"}://\${location.host}\`` (in gateway’s index-*.js). So when loaded via proxy (127.0.0.1:3010), WebSocket goes to **ws://127.0.0.1:3010** → through proxy. |
+| **Session cookie set** | OK – Playwright: cookie `openclaw_session` present with value `proxy:uuid`, path `/`, sameSite Lax. |
+| **Session key in UI** | OK – After loading via proxy, Control UI combobox showed session key `proxy:0f6cb7bc-...` (session is passed through). |
 
-## Assumptions (not automated)
+## Assumption (not fully verifiable without gateway token)
 
-1. **Control UI uses same origin for WebSocket**  
-   If the UI uses `location.origin` or relative URLs for the WebSocket connection, traffic goes through the proxy and session key injection works.  
-   If it hardcodes `ws://127.0.0.1:18789`, the proxy would not see WebSocket traffic and session isolation would not work for real-time chat.  
-   **Check:** In browser DevTools → Network → WS, confirm the WebSocket target is `127.0.0.1:3010` (proxy), not `127.0.0.1:18789` (gateway).
-
-2. **Gateway respects `x-openclaw-session-key` on WebSocket**  
-   The proxy injects the header on the WebSocket upgrade request. Session isolation only works if the gateway uses that header to scope chat/session state.
-
-3. **Cookie/URL session survives navigation**  
-   Session is set via `?session=...` and cookie. As long as the user stays on the proxy origin (3010), the cookie should be sent and the session key available for injection.
+- **Gateway respects `x-openclaw-session-key` on WebSocket**  
+  The proxy injects the header on the WebSocket upgrade. Session isolation per tab can only be confirmed by using two tabs with different sessions and checking that chat history differs; that requires a working gateway connection (token). The UI already displays the session key, so the gateway/UI receives it.
 
 ## How to re-run
 
