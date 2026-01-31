@@ -368,6 +368,23 @@ Push-Location $TargetDir
 npm install
 Pop-Location
 
+$ConfigFile = Join-Path $env:USERPROFILE ".openclaw\openclaw.json"
+Write-Host ""
+$reply = Read-Host "Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar; gateway will be restarted) [y/N]"
+if ($reply -match '^[yY]') {
+  if (Test-Path $ConfigFile) {
+    $env:OPENCLAW_CONFIG_PATH = $ConfigFile
+    node -e "const fs=require('fs');const p=process.env.OPENCLAW_CONFIG_PATH;let j={};try{j=JSON.parse(fs.readFileSync(p,'utf8'));}catch(e){};j.gateway=j.gateway||{};j.gateway.http=j.gateway.http||{};j.gateway.http.endpoints=j.gateway.http.endpoints||{};j.gateway.http.endpoints.chatCompletions=j.gateway.http.endpoints.chatCompletions||{};j.gateway.http.endpoints.chatCompletions.enabled=true;fs.writeFileSync(p,JSON.stringify(j,null,2));"
+    Write-Host "Config updated. Restarting gateway..."
+    & openclaw gateway stop 2>$null
+    Start-Process -FilePath "openclaw" -ArgumentList "gateway" -WindowStyle Hidden
+    Write-Host "Gateway starting in background."
+  } else {
+    Write-Host "Config not found at $ConfigFile. Enable gateway.http.endpoints.chatCompletions.enabled manually and run: openclaw gateway stop; openclaw gateway"
+  }
+}
+
+Write-Host ""
 Write-Host "Install complete."
 Write-Host ""
 Write-Host "Next steps:"

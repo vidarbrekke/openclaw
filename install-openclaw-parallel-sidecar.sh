@@ -381,6 +381,34 @@ EOF
 cd "$TARGET_DIR"
 npm install
 
+# Optional: enable gateway HTTP endpoint and restart gateway
+CONFIG_FILE="${HOME}/.openclaw/openclaw.json"
+echo ""
+read -r -p "Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar; gateway will be restarted) [y/N] " REPLY
+if [[ "${REPLY,,}" =~ ^(y|yes)$ ]]; then
+  if [[ -f "$CONFIG_FILE" ]]; then
+    node -e "
+      const fs = require('fs');
+      const p = process.env.HOME + '/.openclaw/openclaw.json';
+      let j = {};
+      try { j = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) {}
+      j.gateway = j.gateway || {};
+      j.gateway.http = j.gateway.http || {};
+      j.gateway.http.endpoints = j.gateway.http.endpoints || {};
+      j.gateway.http.endpoints.chatCompletions = j.gateway.http.endpoints.chatCompletions || {};
+      j.gateway.http.endpoints.chatCompletions.enabled = true;
+      fs.writeFileSync(p, JSON.stringify(j, null, 2));
+    "
+    echo "Config updated. Restarting gateway..."
+    openclaw gateway stop 2>/dev/null || true
+    openclaw gateway &
+    echo "Gateway starting in background."
+  else
+    echo "Config not found at $CONFIG_FILE. Enable gateway.http.endpoints.chatCompletions.enabled manually and run: openclaw gateway stop && openclaw gateway"
+  fi
+fi
+
+echo ""
 cat <<'EOF'
 Install complete.
 
