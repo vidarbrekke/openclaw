@@ -86,6 +86,59 @@ You don’t need to do anything else for this step; if you say yes, the script d
 
 ---
 
+## Uninstall / disable
+
+### Stop the sidecar
+
+If the sidecar is running, press `Ctrl+C` in the terminal where `npm start` is running, or find the process and kill it:
+
+```bash
+# macOS/Linux
+pkill -f "node.*parallel-chat"
+
+# Windows
+Stop-Process -Name node -Force
+```
+
+### Remove the sidecar files
+
+**macOS / Linux:**
+```bash
+rm -rf ~/.openclaw/sidecar/parallel-chat
+```
+
+**Windows:**
+```powershell
+Remove-Item -Recurse -Force "$env:USERPROFILE\.openclaw\sidecar\parallel-chat"
+```
+
+### Disable the HTTP endpoint (optional)
+
+If you want to turn off the gateway's HTTP chat endpoint (to save resources or for security), edit your OpenClaw config:
+
+**macOS/Linux:** `~/.openclaw/openclaw.json`  
+**Windows:** `%USERPROFILE%\.openclaw\openclaw.json`
+
+Find this section and set `enabled: false`:
+
+```json
+"gateway": {
+  "http": {
+    "endpoints": {
+      "chatCompletions": { "enabled": false }
+    }
+  }
+}
+```
+
+Then restart the gateway:
+```bash
+openclaw gateway stop
+openclaw gateway
+```
+
+---
+
 ## Troubleshooting
 
 - **Sidecar says “Failed to load models” or chat doesn’t work**  
