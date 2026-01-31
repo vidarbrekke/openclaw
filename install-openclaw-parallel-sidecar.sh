@@ -385,7 +385,8 @@ npm install
 CONFIG_FILE="${HOME}/.openclaw/openclaw.json"
 echo ""
 read -r -p "Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar; gateway will be restarted) [y/N] " REPLY
-if [[ "${REPLY,,}" =~ ^(y|yes)$ ]]; then
+case "$REPLY" in
+  [yY]|[yY][eE][sS])
   if [[ -f "$CONFIG_FILE" ]]; then
     node -e "
       const fs = require('fs');
@@ -399,16 +400,17 @@ if [[ "${REPLY,,}" =~ ^(y|yes)$ ]]; then
       j.gateway.http.endpoints.chatCompletions.enabled = true;
       fs.writeFileSync(p, JSON.stringify(j, null, 2));
     "
-    echo "✓ Config updated (HTTP chat endpoint enabled)."
+    echo "Config updated (HTTP chat endpoint enabled)."
     echo ""
-    echo "⚠️  IMPORTANT: Restart your gateway for changes to take effect:"
+    echo "IMPORTANT: Restart your gateway for changes to take effect:"
     echo "   1. Stop the gateway (Ctrl+C if running in foreground, or: kill \$(pgrep -f openclaw-gateway))"
     echo "   2. Start it again: openclaw gateway"
     echo ""
   else
-    echo "Config not found at $CONFIG_FILE. Enable gateway.http.endpoints.chatCompletions.enabled manually and run: openclaw gateway stop && openclaw gateway"
+    echo "Config not found at $CONFIG_FILE. Enable gateway.http.endpoints.chatCompletions.enabled manually, then stop the gateway (Ctrl+C) and run: openclaw gateway"
   fi
-fi
+  ;;
+esac
 
 echo ""
 cat <<'EOF'
