@@ -1,3 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+OS_NAME="$(uname -s)"
+case "$OS_NAME" in
+  MINGW*|MSYS*|CYGWIN*)
+    if command -v powershell.exe >/dev/null 2>&1; then
+      SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+      powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SCRIPT_DIR/install-openclaw-parallel-sidecar.ps1"
+      exit 0
+    fi
+    echo "Windows detected but powershell.exe not found."
+    echo "Run install-openclaw-parallel-sidecar.ps1 manually."
+    exit 1
+    ;;
+esac
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "Node.js is required. Install Node 18+ and retry."
+  exit 1
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "npm is required. Install Node 18+ (includes npm) and retry."
+  exit 1
+fi
+
+TARGET_DIR="${HOME}/.openclaw/sidecar/parallel-chat"
+mkdir -p "$TARGET_DIR"
+
+cat > "${TARGET_DIR}/server.js" <<'EOF'
 import express from "express";
 import crypto from "crypto";
 
@@ -190,7 +221,7 @@ function appendLine(text){
 }
 
 function appendUser(text){
-  appendLine('\\nUSER: ' + text + '\\n');
+  appendLine(`\nUSER: ${text}\n`);
 }
 
 function beginAssistant(){
@@ -202,20 +233,20 @@ function appendAssistantDelta(delta){
 }
 
 function endAssistant(){
-  appendLine('\\n');
+  appendLine('\n');
 }
 
 function consumeSse(buffer) {
-  const parts = buffer.split(/\\n\\n/);
+  const parts = buffer.split(/\n\n/);
   const remainder = parts.pop() ?? '';
   const events = [];
   for (const raw of parts) {
-    const lines = raw.split(/\\n/);
+    const lines = raw.split(/\n/);
     const dataLines = [];
     for (const line of lines) {
       if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
     }
-    if (dataLines.length) events.push(dataLines.join('\\n'));
+    if (dataLines.length) events.push(dataLines.join('\n'));
   }
   return { events, remainder };
 }
@@ -255,7 +286,7 @@ async function send(){
 
     if (!res.ok || !res.body) {
       const t = await res.text().catch(() => '');
-      appendAssistantDelta('\\n[HTTP ' + res.status + '] ' + t + '\\n');
+      appendAssistantDelta(`\n[HTTP ${res.status}] ${t}\n`);
       endAssistant();
       return;
     }
@@ -295,11 +326,11 @@ async function send(){
 
   } catch (e) {
     if (String(e?.name) === 'AbortError') {
-      appendAssistantDelta('\\n[stopped]\\n');
+      appendAssistantDelta('\n[stopped]\n');
       endAssistant();
       if (assistantText) messages.push({ role: 'assistant', content: assistantText });
     } else {
-      appendAssistantDelta('\\n[error] ' + (e?.message || e) + '\\n');
+      appendAssistantDelta(`\n[error] ${e?.message || e}\n`);
       endAssistant();
     }
   } finally {
@@ -320,10 +351,107 @@ newTabBtn.onclick = () => {
   window.open('/new', '_blank', 'noopener');
 };
 
-appendLine('SYSTEM: Ready. This tab is an isolated session lane.\\n');
+appendLine('SYSTEM: Ready. This tab is an isolated session lane.\n');
 </script>`);
 });
 
 app.listen(PORT, BIND_HOST, () => {
   console.log(`Sidecar listening on http://${BIND_HOST}:${PORT}/new`);
 });
+EOF
+
+cat > "${TARGET_DIR}/package.json" <<'EOF'
+{
+  "name": "openclaw-parallel-sidecar",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
+EOF
+
+cd "$TARGET_DIR"
+npm install
+
+# Ports: read from config when possible, else defaults
+CONFIG_FILE="${HOME}/.openclaw/openclaw.json"
+GW_PORT=18789
+SIDECAR_PORT=3005
+if [[ -f "$CONFIG_FILE" ]]; then
+  GW_PORT=$(node -e "
+    let j = {}; try { j = JSON.parse(require('fs').readFileSync(process.env.HOME + '/.openclaw/openclaw.json', 'utf8')); } catch (e) {}
+    const g = j.gateway || {}; const h = g.http || {};
+    const p = h.port || g.port;
+    console.log(typeof p === 'number' ? p : (typeof p === 'string' ? parseInt(p, 10) : 18789) || 18789);
+  " 2>/dev/null) || GW_PORT=18789
+fi
+
+# Enable gateway HTTP endpoint (prompt if interactive, auto-enable if piped e.g. curl|bash)
+enable_http=1
+if [[ -t 0 ]]; then
+  echo ""
+  read -r -p "Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar) [Y/n] " REPLY
+  case "$REPLY" in
+    [nN]) enable_http=0 ;;
+    [nN][oO]) enable_http=0 ;;
+  esac
+fi
+if [[ "$enable_http" -eq 1 && -f "$CONFIG_FILE" ]]; then
+    node -e "
+      const fs = require('fs');
+      const p = process.env.HOME + '/.openclaw/openclaw.json';
+      let j = {};
+      try { j = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) {}
+      j.gateway = j.gateway || {};
+      j.gateway.http = j.gateway.http || {};
+      j.gateway.http.endpoints = j.gateway.http.endpoints || {};
+      j.gateway.http.endpoints.chatCompletions = j.gateway.http.endpoints.chatCompletions || {};
+      j.gateway.http.endpoints.chatCompletions.enabled = true;
+      fs.writeFileSync(p, JSON.stringify(j, null, 2));
+    "
+    echo "Config updated (HTTP chat endpoint enabled)."
+    echo ""
+    echo "Restarting gateway in background..."
+    openclaw gateway stop 2>/dev/null || true
+    pkill -f openclaw-gateway 2>/dev/null || true
+    sleep 2
+    nohup openclaw gateway >/dev/null 2>&1 &
+    echo "Starting sidecar in background..."
+    ( cd "$TARGET_DIR" && OPENCLAW_GATEWAY_URL="http://127.0.0.1:${GW_PORT}" PORT="$SIDECAR_PORT" nohup npm start >/dev/null 2>&1 & )
+    echo ""
+elif [[ "$enable_http" -eq 1 ]]; then
+  echo "Config not found at $CONFIG_FILE. Enable gateway.http.endpoints.chatCompletions.enabled manually, then stop the gateway (Ctrl+C) and run: openclaw gateway"
+fi
+
+echo ""
+echo "=========================================="
+echo "Install complete!"
+echo "=========================================="
+echo ""
+if [[ "$enable_http" -eq 1 ]]; then
+  echo "✓ Gateway HTTP chat endpoint enabled in openclaw.json"
+  echo "✓ Gateway restarted in background (port ${GW_PORT})"
+  echo "✓ Sidecar started in background at http://127.0.0.1:${SIDECAR_PORT}/new"
+  echo ""
+  echo "To run gateway or sidecar in the foreground (e.g. to see logs), stop the background processes and run in separate terminals:"
+  echo "  openclaw gateway"
+  echo "  cd ~/.openclaw/sidecar/parallel-chat && OPENCLAW_GATEWAY_URL=\"http://127.0.0.1:${GW_PORT}\" PORT=${SIDECAR_PORT} npm start"
+else
+  echo "To start the sidecar:"
+  echo "  cd ~/.openclaw/sidecar/parallel-chat"
+  echo "  export OPENCLAW_GATEWAY_URL=\"http://127.0.0.1:${GW_PORT}\""
+  echo "  PORT=${SIDECAR_PORT} npm start"
+fi
+echo ""
+echo "Open: http://127.0.0.1:${SIDECAR_PORT}/new"
+echo ""
+echo "Each tab is an isolated chat session with your OpenClaw gateway."
+echo ""

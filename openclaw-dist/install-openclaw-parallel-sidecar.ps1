@@ -1,3 +1,20 @@
+$ErrorActionPreference = "Stop"
+
+function Ensure-Command {
+  param([string]$Name, [string]$Hint)
+  if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
+    Write-Host "$Name is required. $Hint"
+    exit 1
+  }
+}
+
+Ensure-Command -Name "node" -Hint "Install Node 18+ and retry."
+Ensure-Command -Name "npm" -Hint "Install Node 18+ (includes npm) and retry."
+
+$TargetDir = Join-Path $env:USERPROFILE ".openclaw\sidecar\parallel-chat"
+New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
+
+@'
 import express from "express";
 import crypto from "crypto";
 
@@ -190,7 +207,7 @@ function appendLine(text){
 }
 
 function appendUser(text){
-  appendLine('\\nUSER: ' + text + '\\n');
+  appendLine(`\nUSER: ${text}\n`);
 }
 
 function beginAssistant(){
@@ -202,20 +219,20 @@ function appendAssistantDelta(delta){
 }
 
 function endAssistant(){
-  appendLine('\\n');
+  appendLine('\n');
 }
 
 function consumeSse(buffer) {
-  const parts = buffer.split(/\\n\\n/);
+  const parts = buffer.split(/\n\n/);
   const remainder = parts.pop() ?? '';
   const events = [];
   for (const raw of parts) {
-    const lines = raw.split(/\\n/);
+    const lines = raw.split(/\n/);
     const dataLines = [];
     for (const line of lines) {
       if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
     }
-    if (dataLines.length) events.push(dataLines.join('\\n'));
+    if (dataLines.length) events.push(dataLines.join('\n'));
   }
   return { events, remainder };
 }
@@ -255,7 +272,7 @@ async function send(){
 
     if (!res.ok || !res.body) {
       const t = await res.text().catch(() => '');
-      appendAssistantDelta('\\n[HTTP ' + res.status + '] ' + t + '\\n');
+      appendAssistantDelta(`\n[HTTP ${res.status}] ${t}\n`);
       endAssistant();
       return;
     }
@@ -295,11 +312,11 @@ async function send(){
 
   } catch (e) {
     if (String(e?.name) === 'AbortError') {
-      appendAssistantDelta('\\n[stopped]\\n');
+      appendAssistantDelta('\n[stopped]\n');
       endAssistant();
       if (assistantText) messages.push({ role: 'assistant', content: assistantText });
     } else {
-      appendAssistantDelta('\\n[error] ' + (e?.message || e) + '\\n');
+      appendAssistantDelta(`\n[error] ${e?.message || e}\n`);
       endAssistant();
     }
   } finally {
@@ -320,10 +337,62 @@ newTabBtn.onclick = () => {
   window.open('/new', '_blank', 'noopener');
 };
 
-appendLine('SYSTEM: Ready. This tab is an isolated session lane.\\n');
+appendLine('SYSTEM: Ready. This tab is an isolated session lane.\n');
 </script>`);
 });
 
 app.listen(PORT, BIND_HOST, () => {
   console.log(`Sidecar listening on http://${BIND_HOST}:${PORT}/new`);
 });
+'@ | Set-Content -Path (Join-Path $TargetDir "server.js") -Encoding UTF8
+
+@'
+{
+  "name": "openclaw-parallel-sidecar",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
+'@ | Set-Content -Path (Join-Path $TargetDir "package.json") -Encoding UTF8
+
+Push-Location $TargetDir
+npm install
+Pop-Location
+
+$ConfigFile = Join-Path $env:USERPROFILE ".openclaw\openclaw.json"
+Write-Host ""
+$reply = Read-Host "Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar; gateway will be restarted) [y/N]"
+if ($reply -match '^[yY]') {
+  if (Test-Path $ConfigFile) {
+    $env:OPENCLAW_CONFIG_PATH = $ConfigFile
+    node -e "const fs=require('fs');const p=process.env.OPENCLAW_CONFIG_PATH;let j={};try{j=JSON.parse(fs.readFileSync(p,'utf8'));}catch(e){};j.gateway=j.gateway||{};j.gateway.http=j.gateway.http||{};j.gateway.http.endpoints=j.gateway.http.endpoints||{};j.gateway.http.endpoints.chatCompletions=j.gateway.http.endpoints.chatCompletions||{};j.gateway.http.endpoints.chatCompletions.enabled=true;fs.writeFileSync(p,JSON.stringify(j,null,2));"
+    Write-Host "✓ Config updated (HTTP chat endpoint enabled)."
+    Write-Host ""
+    Write-Host "⚠️  IMPORTANT: Restart your gateway for changes to take effect:"
+    Write-Host "   1. Stop the gateway (Ctrl+C if running in foreground, or: Stop-Process -Name openclaw-gateway)"
+    Write-Host "   2. Start it again: openclaw gateway"
+    Write-Host ""
+  } else {
+    Write-Host "Config not found at $ConfigFile. Enable gateway.http.endpoints.chatCompletions.enabled manually and run: openclaw gateway stop; openclaw gateway"
+  }
+}
+
+Write-Host ""
+Write-Host "Install complete."
+Write-Host ""
+Write-Host "Next steps:"
+Write-Host "  `$env:OPENCLAW_GATEWAY_URL = `"http://127.0.0.1:18789`""
+Write-Host "  # `$env:OPENCLAW_GATEWAY_TOKEN = `"...`""
+Write-Host "  npm start"
+Write-Host ""
+Write-Host "Open:"
+Write-Host "  http://127.0.0.1:3005/new"

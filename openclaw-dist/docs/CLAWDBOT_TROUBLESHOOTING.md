@@ -1,0 +1,194 @@
+# OpenClaw (formerly Clawdbot/moltbot) troubleshooting notes
+
+## 1. Control UI: replies not showing (FIXED)
+
+### Root cause
+The gateway correctly runs the model, appends the assistant message to the transcript, and broadcasts a `chat` event with `state: "final"` (and optionally the message in the payload). The Control UI **receives** this event and clears the "streaming" state (`chatStream`, `chatRunId`, `chatStreamStartedAt`) but **does not refresh the message list**. So `chatMessages` is never updated with the new assistant reply, and the UI keeps showing the spinner/placeholder.
+
+- `deliver: false` in `chat.send` is **unrelated** to this. The gateway does not use `deliver` for the webchat path; it only affects whether the reply is sent to an external channel (e.g. WhatsApp). Replies are always written to the session transcript.
+- `chat.history` does return the full history (including the new message) when called after the run completes; the bug was purely that the UI did not call `chat.history` when it received the `chat` / `state: "final"` event.
+
+### Fix applied
+A one-line patch was applied to the Control UI bundle so that when a `chat` event with `state: "final"` (or `"aborted"`) is received, the UI also calls the load-history function (`St(e)` in the minified bundle), which fetches `chat.history` and updates `chatMessages`. That makes the new assistant message appear without a manual refresh.
+
+**Files patched (in the globally installed package):**
+- Old: `.../node_modules/clawdbot/dist/control-ui/assets/index-Cl-Y9zqE.js` (2026.1.24-3)
+- New: `.../node_modules/openclaw/dist/control-ui/assets/index-DFDgq9AK.js` (2026.1.29)
+
+**Note:** This patch lives inside the npm-installed package. It will be overwritten on the next `npm install -g openclaw` or upgrade. For a permanent fix, the upstream Control UI should be updated to refresh history (or merge the final message from the event) when `state === "final"`.
+
+**Model scanning is NOT affected:** The patch only touches the Control UI bundle (frontend JavaScript). Model discovery happens via `piSdk.discoverModels()` which scans from the agent directory (`~/.openclaw/agents/main/`) and is completely separate from the UI bundle. The model catalog code (`dist/agents/model-catalog.js`, `dist/gateway/server-model-catalog.js`) is untouched.
+
+### Workaround if you revert the patch
+After sending a message, click the **Refresh** button in the Chat tab (or switch session and back) so the UI calls `chat.history` and the reply appears.
+
+---
+
+## 2. TUI (and Control UI chat): "HTTP 401: User not found"
+
+### Root cause (confirmed)
+**"HTTP 401: User not found" comes from OpenRouter**, not from the OpenClaw gateway or TUI auth. When the agent runs (TUI or Control UI chat), it calls the OpenRouter API; OpenRouter returns 401 with "User not found" when the **API key is invalid, disabled, or not recognized**.
+
+- Session transcripts in `~/.openclaw/agents/main/sessions/*.jsonl` show `"errorMessage":"401 User not found."` on assistant messages with `"stopReason":"error"`.
+- So gateway/TUI connection is fine; the failure happens when the model request is sent to OpenRouter.
+
+### How to fix
+1. **Verify your OpenRouter API key**
+   - Open [OpenRouter → Settings → Keys](https://openrouter.ai/settings/keys).
+   - Confirm the key you use in OpenClaw is present and **not** disabled or deleted.
+2. **Regenerate the key if needed**
+   - If the key was disabled, exposed, or compromised, create a new key on the same page and use it in OpenClaw.
+3. **Update the key in OpenClaw**
+   - The OpenRouter key is stored in `~/.openclaw/agents/main/agent/auth-profiles.json` under the `openrouter:default` profile (`key` field).
+   - After creating a new key, either:
+     - Run `openclaw onboard` and go through the provider/auth step for OpenRouter again, or
+     - Manually edit `auth-profiles.json` and set the new key (then restart gateway if it's running).
+4. **Optional: use env for the key**
+   - You can use an environment variable for the API key if your OpenClaw/OpenRouter setup supports it (see OpenClaw docs for OpenRouter auth), so the key isn't stored in plain text in the profile.
+
+### Gateway/TUI auth (separate from this)
+- TUI connects to the gateway over WebSocket; that uses `gateway.auth.token` (or device token). The 401 you see is **not** from that step; it appears when the **model run** (OpenRouter call) fails.
+- So fixing the OpenRouter key should resolve "HTTP 401: User not found" in both TUI and Control UI chat.
+
+---
+
+## 3. Model discovery and moonshotai/kimi-k2.5
+
+### Model scanning mechanism (intact)
+Model discovery is **completely separate** from the Control UI bundle and was **not affected** by the patch:
+
+- **Model catalog loading:** `dist/agents/model-catalog.js` uses `piSdk.discoverModels()` to scan models from the agent directory (`~/.openclaw/agents/main/`).
+- **Model registry:** Models are discovered from `models.json` (auto-generated by `ensureOpenClawModelsJson()`) and the `@mariozechner/pi-coding-agent` SDK.
+- **Moonshot support:** Moonshot provider is defined in `dist/agents/models-config.providers.js` with `kimi-k2.5` as the default model ID (`MOONSHOT_DEFAULT_MODEL_ID`).
+
+### Verifying moonshotai/kimi-k2.5 availability (via OpenRouter)
+**Note:** If you're using OpenRouter (not direct Moonshot provider), the model path is `openrouter/moonshotai/kimi-k2.5` (provider prefix is `openrouter`, sub-provider is `moonshotai`).
+
+1. **Check if models.json exists:**
+   ```bash
+   ls -la ~/.openclaw/agents/main/models.json
+   ```
+   If it doesn't exist, it will be created automatically when the gateway starts or when models are scanned.
+
+2. **List available models:**
+   ```bash
+   openclaw models list | grep -i "moonshot\|kimi"
+   ```
+
+3. **If openrouter/moonshotai/kimi-k2.5 doesn't appear or shows "not allowed":**
+   - **Root cause:** Model discovery uses `piSdk.discoverModels()` from `@mariozechner/pi-coding-agent`, which uses a static catalog. Since `moonshotai/kimi-k2.5` is very new (created Jan 27, 2026), it may not be in the SDK's catalog yet. Additionally, OpenClaw validates models against an allowlist - models must be either in the catalog OR their provider must be in `models.providers` config.
+   - **Fix:** Add OpenRouter to `models.providers` in `~/.openclaw/openclaw.json` with required fields:
+     ```json
+     {
+       "models": {
+         "providers": {
+           "openrouter": {
+             "baseUrl": "https://openrouter.ai/api/v1",
+             "models": []
+           }
+         }
+       }
+     }
+     ```
+     This allows any OpenRouter model to be used, even if it's not in the SDK's catalog. The `baseUrl` and `models` fields are required by the config schema (even though OpenRouter models are discovered via the SDK, not from this config).
+   - **Also add the model to allowlist:** Add `"openrouter/moonshotai/kimi-k2.5": {}` to `agents.defaults.models` in the same config file.
+   - **Note:** `openclaw models scan` only scans **free** models (filters by `isFreeOpenRouterModel`), so paid models like `moonshotai/kimi-k2.5` won't appear in scan results.
+   - **Future:** The SDK catalog will likely be updated in a future release to include newer OpenRouter models. Until then, this configuration allows you to use any OpenRouter model.
+
+**Direct Moonshot provider (if not using OpenRouter):**
+- If using the direct Moonshot provider instead of OpenRouter, configure `moonshot-api-key` via `openclaw onboard`
+- The model would appear as `moonshot/kimi-k2.5` (provider prefix is `moonshot`, not `moonshotai`)
+
+### Model catalog files (not corrupted)
+The patch **only** modified the Control UI bundle (`index-DFDgq9AK.js`), which is frontend JavaScript. It did **not** touch:
+- `dist/agents/model-catalog.js` (model discovery logic)
+- `dist/agents/models-config.js` (models.json generation)
+- `dist/agents/models-config.providers.js` (provider definitions including Moonshot)
+- `dist/gateway/server-model-catalog.js` (gateway model catalog loader)
+
+All model scanning/inclusion/approval logic is intact.
+
+---
+
+## 4. Kimi-K2.5 tool calling issues: ": 0," prefix corrupting tool parameters
+
+### Root cause
+**Kimi-K2.5 (via OpenRouter) has a known bug** where it adds a `": 0,"` prefix to tool call parameters, corrupting them and causing tool calls to fail. This is a **model-level issue**, not an OpenClaw bug. The error message "The : 0, prefix keeps corrupting my tool parameters. This appears to be a session-level issue that I cannot resolve from within the conversation" is **coming from the model itself** - Kimi-K2.5 is reporting that it cannot fix its own tool call formatting.
+
+### When it happens
+- Most commonly occurs when reviewing code or git repositories (tasks that require multiple tool calls)
+- The model attempts to call tools but generates malformed parameters with the `": 0,"` prefix
+- Tool calls fail to parse correctly, causing the agent to report errors
+
+### Known issue status
+This is a documented issue with Kimi K2/K2.5 models when used through OpenRouter:
+- [GitHub Gist documenting the issue](https://gist.github.com/ben-vargas/c7c9633e6f482ea99041dd7bd90fbe09)
+- The model is advertised as supporting tool calling, but has compatibility issues when routed through OpenRouter's API
+- Some users report the model generates JSON in text responses instead of actual tool calls
+- Others report malformed tool calls with corrupting prefixes (your case)
+
+### Workarounds
+
+**Option 1: Use a different model for tool-heavy tasks**
+- Switch to a fallback model (e.g., `openrouter/google/gemini-2.5-flash-lite` or `openrouter/auto`) when you need reliable tool calling
+- You can temporarily change models in-session: `model openrouter/google/gemini-2.5-flash-lite`
+- Or configure fallbacks in `~/.openclaw/openclaw.json`:
+  ```json
+  {
+    "agents": {
+      "defaults": {
+        "model": {
+          "primary": "openrouter/moonshotai/kimi-k2.5",
+          "fallbacks": [
+            "openrouter/google/gemini-2.5-flash-lite",
+            "openrouter/auto"
+          ]
+        }
+      }
+    }
+  }
+  ```
+
+**Option 2: Use direct Moonshot provider (if available)**
+- If Moonshot offers a direct API (not through OpenRouter), it might have better tool calling support
+- Configure via `openclaw onboard` and use `moonshot/kimi-k2.5` instead of `openrouter/moonshotai/kimi-k2.5`
+- **Note:** This may not resolve the issue if it's a model-level bug, not an OpenRouter-specific problem
+
+**Option 3: Wait for upstream fixes**
+- Monitor OpenRouter/MoonshotAI for updates that fix tool calling
+- Check OpenRouter's model page for `moonshotai/kimi-k2.5` for status updates
+- Consider reporting the issue to OpenRouter support if not already documented
+
+### Why OpenClaw can't fix this
+- OpenClaw's transcript sanitization (`dist/agents/transcript-policy.js`) handles Google, Anthropic, Mistral, and OpenAI models, but **does not have specific handling for Moonshot/Kimi models**
+- The corruption happens at the model's output level before OpenClaw receives it
+- Adding Moonshot-specific sanitization would require patching the installed package and may not fully resolve the issue if the model's tool call format is fundamentally broken
+
+### Technical details
+- OpenClaw uses `resolveTranscriptPolicy()` in `transcript-policy.js` to determine sanitization rules
+- Currently, Moonshot/Kimi models get `sanitizeMode: "images-only"` (minimal sanitization)
+- Models like Google/Anthropic get `sanitizeMode: "full"` with additional repair logic
+- Even with full sanitization, a `": 0,"` prefix in tool parameters would likely break JSON parsing
+
+### Future improvements
+- If OpenClaw adds Moonshot/Kimi-specific sanitization, it could potentially strip or repair the `": 0,"` prefix
+- This would require modifying `/opt/homebrew/lib/node_modules/openclaw/dist/agents/transcript-policy.js` to detect Kimi models and apply appropriate sanitization
+- However, this is a workaround for a model bug - the proper fix should come from MoonshotAI/OpenRouter
+
+---
+
+## 5. Useful paths and commands
+
+- **Config:** `~/.openclaw/openclaw.json` (or `~/.clawdbot/clawdbot.json` if symlinked)
+- **Device identity:** `~/.openclaw/identity/device.json`
+- **Paired devices:** `~/.openclaw/devices/paired.json`
+- **OpenRouter auth profile:** `~/.openclaw/agents/main/agent/auth-profiles.json`
+- **Moonshot auth profile:** `~/.openclaw/agents/main/agent/auth-profiles.json` (look for `moonshot:default` if using direct Moonshot, or `openrouter:default` if using via OpenRouter)
+- **Models registry:** `~/.openclaw/agents/main/models.json` (auto-generated)
+- **Gateway logs:** `~/.openclaw/logs/gateway.log` or `/tmp/openclaw/openclaw-*.log`
+- **Start gateway:** `openclaw gateway`
+- **Start dashboard (tokenized):** `openclaw dashboard`
+- **TUI (with optional token):** `OPENCLAW_GATEWAY_TOKEN=<same-as-gateway.auth.token> openclaw tui`  
+  Or ensure `gateway.remote.token` in config matches `gateway.auth.token` when using remote mode.
+- **List models:** `openclaw models list`
+- **Onboard (configure providers):** `openclaw onboard`

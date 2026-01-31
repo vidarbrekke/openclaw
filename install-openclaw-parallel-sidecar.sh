@@ -221,7 +221,7 @@ function appendLine(text){
 }
 
 function appendUser(text){
-  appendLine(\`\nUSER: \${text}\n\`);
+  appendLine('\\nUSER: ' + text + '\\n');
 }
 
 function beginAssistant(){
@@ -286,7 +286,7 @@ async function send(){
 
     if (!res.ok || !res.body) {
       const t = await res.text().catch(() => '');
-      appendAssistantDelta(\`\n[HTTP \${res.status}] \${t}\n\`);
+      appendAssistantDelta('\\n[HTTP ' + res.status + '] ' + t + '\\n');
       endAssistant();
       return;
     }
@@ -330,7 +330,7 @@ async function send(){
       endAssistant();
       if (assistantText) messages.push({ role: 'assistant', content: assistantText });
     } else {
-      appendAssistantDelta(\`\n[error] \${e?.message || e}\n\`);
+      appendAssistantDelta('\\n[error] ' + (e?.message || e) + '\\n');
       endAssistant();
     }
   } finally {
