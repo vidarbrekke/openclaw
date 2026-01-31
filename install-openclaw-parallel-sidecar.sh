@@ -424,10 +424,30 @@ if [[ "$enable_http" -eq 1 && -f "$CONFIG_FILE" ]]; then
     pkill -f openclaw-gateway 2>/dev/null || true
     sleep 2
     nohup openclaw gateway >/dev/null 2>&1 &
-    echo "Starting sidecar in background..."
-    SIDECAR_LOG="${TARGET_DIR}/start.log"
-    ( cd "$TARGET_DIR" && OPENCLAW_GATEWAY_URL="http://127.0.0.1:${GW_PORT}" PORT="$SIDECAR_PORT" nohup npm start >> "$SIDECAR_LOG" 2>&1 & )
-    echo "  (logs: $SIDECAR_LOG if it fails)"
+    sleep 1
+    echo "Opening new terminal for sidecar..."
+    SIDECAR_CMD="cd '$TARGET_DIR' && export OPENCLAW_GATEWAY_URL='http://127.0.0.1:${GW_PORT}' && PORT=${SIDECAR_PORT} npm start"
+    case "$OS_NAME" in
+      Darwin)
+        osascript -e "tell application \"Terminal\" to do script \"$SIDECAR_CMD\"" >/dev/null 2>&1 &
+        ;;
+      Linux)
+        if command -v gnome-terminal >/dev/null 2>&1; then
+          gnome-terminal -- bash -c "$SIDECAR_CMD; exec bash" >/dev/null 2>&1 &
+        elif command -v xterm >/dev/null 2>&1; then
+          xterm -e bash -c "$SIDECAR_CMD; exec bash" >/dev/null 2>&1 &
+        elif command -v konsole >/dev/null 2>&1; then
+          konsole -e bash -c "$SIDECAR_CMD; exec bash" >/dev/null 2>&1 &
+        else
+          echo "  (Could not detect terminal; starting in background)"
+          ( cd "$TARGET_DIR" && OPENCLAW_GATEWAY_URL="http://127.0.0.1:${GW_PORT}" PORT="$SIDECAR_PORT" nohup npm start >/dev/null 2>&1 & )
+        fi
+        ;;
+      *)
+        echo "  (Could not detect OS; starting in background)"
+        ( cd "$TARGET_DIR" && OPENCLAW_GATEWAY_URL="http://127.0.0.1:${GW_PORT}" PORT="$SIDECAR_PORT" nohup npm start >/dev/null 2>&1 & )
+        ;;
+    esac
     echo ""
 elif [[ "$enable_http" -eq 1 ]]; then
   echo "Config not found at $CONFIG_FILE. Enable gateway.http.endpoints.chatCompletions.enabled manually, then stop the gateway (Ctrl+C) and run: openclaw gateway"
@@ -440,12 +460,13 @@ echo "=========================================="
 echo ""
 if [[ "$enable_http" -eq 1 ]]; then
   echo "✓ Gateway HTTP chat endpoint enabled in openclaw.json"
-  echo "✓ Gateway restarted in background (port ${GW_PORT})"
-  echo "✓ Sidecar started in background at http://127.0.0.1:${SIDECAR_PORT}/new"
+  echo "✓ Gateway restart attempted in background (port ${GW_PORT})"
+  echo "✓ Sidecar started in new terminal window"
   echo ""
-  echo "To run gateway or sidecar in the foreground (e.g. to see logs), stop the background processes and run in separate terminals:"
+  echo "If the gateway didn't start (e.g. 'Gateway service not loaded'), run it manually in a terminal:"
   echo "  openclaw gateway"
-  echo "  cd ~/.openclaw/sidecar/parallel-chat && OPENCLAW_GATEWAY_URL=\"http://127.0.0.1:${GW_PORT}\" PORT=${SIDECAR_PORT} npm start"
+  echo ""
+  echo "The sidecar is running in the terminal window that just opened."
 else
   echo "To start the sidecar:"
   echo "  cd ~/.openclaw/sidecar/parallel-chat"

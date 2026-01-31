@@ -369,30 +369,65 @@ npm install
 Pop-Location
 
 $ConfigFile = Join-Path $env:USERPROFILE ".openclaw\openclaw.json"
-Write-Host ""
-$reply = Read-Host "Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar; gateway will be restarted) [y/N]"
-if ($reply -match '^[yY]') {
-  if (Test-Path $ConfigFile) {
-    $env:OPENCLAW_CONFIG_PATH = $ConfigFile
-    node -e "const fs=require('fs');const p=process.env.OPENCLAW_CONFIG_PATH;let j={};try{j=JSON.parse(fs.readFileSync(p,'utf8'));}catch(e){};j.gateway=j.gateway||{};j.gateway.http=j.gateway.http||{};j.gateway.http.endpoints=j.gateway.http.endpoints||{};j.gateway.http.endpoints.chatCompletions=j.gateway.http.endpoints.chatCompletions||{};j.gateway.http.endpoints.chatCompletions.enabled=true;fs.writeFileSync(p,JSON.stringify(j,null,2));"
-    Write-Host "✓ Config updated (HTTP chat endpoint enabled)."
-    Write-Host ""
-    Write-Host "⚠️  IMPORTANT: Restart your gateway for changes to take effect:"
-    Write-Host "   1. Stop the gateway (Ctrl+C if running in foreground, or: Stop-Process -Name openclaw-gateway)"
-    Write-Host "   2. Start it again: openclaw gateway"
-    Write-Host ""
-  } else {
-    Write-Host "Config not found at $ConfigFile. Enable gateway.http.endpoints.chatCompletions.enabled manually and run: openclaw gateway stop; openclaw gateway"
-  }
+$GwPort = 18789
+$SidecarPort = 3005
+
+if (Test-Path $ConfigFile) {
+  try {
+    $cfg = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+    $p = $cfg.gateway.http.port
+    if (-not $p) { $p = $cfg.gateway.port }
+    if ($p) { $GwPort = $p }
+  } catch {}
 }
 
 Write-Host ""
-Write-Host "Install complete."
+$enableHttp = $true
+$reply = Read-Host "Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar) [Y/n]"
+if ($reply -match '^[nN]') { $enableHttp = $false }
+
+if ($enableHttp -and (Test-Path $ConfigFile)) {
+    $env:OPENCLAW_CONFIG_PATH = $ConfigFile
+    node -e "const fs=require('fs');const p=process.env.OPENCLAW_CONFIG_PATH;let j={};try{j=JSON.parse(fs.readFileSync(p,'utf8'));}catch(e){};j.gateway=j.gateway||{};j.gateway.http=j.gateway.http||{};j.gateway.http.endpoints=j.gateway.http.endpoints||{};j.gateway.http.endpoints.chatCompletions=j.gateway.http.endpoints.chatCompletions||{};j.gateway.http.endpoints.chatCompletions.enabled=true;fs.writeFileSync(p,JSON.stringify(j,null,2));"
+    Write-Host "Config updated (HTTP chat endpoint enabled)."
+    Write-Host ""
+    Write-Host "Restarting gateway in background..."
+    & openclaw gateway stop 2>$null
+    Get-Process | Where-Object { $_.ProcessName -match 'openclaw-gateway' } | Stop-Process -Force 2>$null
+    Start-Sleep -Seconds 2
+    Start-Process -FilePath "openclaw" -ArgumentList "gateway" -WindowStyle Hidden
+    Start-Sleep -Seconds 1
+    Write-Host "Opening new terminal for sidecar..."
+    $SidecarCmd = "cd '$TargetDir'; `$env:OPENCLAW_GATEWAY_URL='http://127.0.0.1:$GwPort'; `$env:PORT=$SidecarPort; npm start"
+    Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", $SidecarCmd
+    Write-Host ""
+} elseif ($enableHttp) {
+  Write-Host "Config not found at $ConfigFile. Enable gateway.http.endpoints.chatCompletions.enabled manually, then stop the gateway (Ctrl+C) and run: openclaw gateway"
+}
+
 Write-Host ""
-Write-Host "Next steps:"
-Write-Host "  `$env:OPENCLAW_GATEWAY_URL = `"http://127.0.0.1:18789`""
-Write-Host "  # `$env:OPENCLAW_GATEWAY_TOKEN = `"...`""
-Write-Host "  npm start"
+Write-Host "=========================================="
+Write-Host "Install complete!"
+Write-Host "=========================================="
 Write-Host ""
-Write-Host "Open:"
-Write-Host "  http://127.0.0.1:3005/new"
+if ($enableHttp) {
+  Write-Host "✓ Gateway HTTP chat endpoint enabled in openclaw.json"
+  Write-Host "✓ Gateway restart attempted in background (port $GwPort)"
+  Write-Host "✓ Sidecar started in new terminal window"
+  Write-Host ""
+  Write-Host "If the gateway didn't start (e.g. 'Gateway service not loaded'), run it manually in a terminal:"
+  Write-Host "  openclaw gateway"
+  Write-Host ""
+  Write-Host "The sidecar is running in the terminal window that just opened."
+} else {
+  Write-Host "To start the sidecar:"
+  Write-Host "  cd `$env:USERPROFILE\.openclaw\sidecar\parallel-chat"
+  Write-Host "  `$env:OPENCLAW_GATEWAY_URL = `"http://127.0.0.1:$GwPort`""
+  Write-Host "  `$env:PORT = $SidecarPort"
+  Write-Host "  npm start"
+}
+Write-Host ""
+Write-Host "Open: http://127.0.0.1:${SidecarPort}/new"
+Write-Host ""
+Write-Host "Each tab is an isolated chat session with your OpenClaw gateway."
+Write-Host ""

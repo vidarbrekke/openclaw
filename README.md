@@ -45,18 +45,40 @@ When installed via `curl ... | bash`, it **auto-enables** (assumes Yes).
 
 ---
 
-## After install: run the sidecar
+## After install: what happens automatically
 
-If you answered **Yes** (or used `curl|bash`), the installer **restarts the gateway and starts the sidecar in the background** so you can use them right away. Ports are read from your OpenClaw config when possible (default gateway **18789**, sidecar **3005**).
+If you answered **Yes** (or used `curl|bash`), the installer:
 
-If you prefer to run in the **foreground** (e.g. to see logs), stop the background processes and run in two terminals:
+1. **Enables the HTTP endpoint** in your OpenClaw config.
+2. **Attempts to restart the gateway** in the background (if it says "Gateway service not loaded", you'll need to start it manually—see below).
+3. **Opens a new terminal window** and starts the sidecar there (so you can see logs and keep the sidecar running).
+
+Ports are read from your OpenClaw config when possible (default gateway **18789**, sidecar **3005**).
+
+---
+
+## If the gateway didn't start
+
+If the installer printed **"Gateway service not loaded"**, start the gateway manually in a terminal:
+
+```bash
+openclaw gateway
+```
+
+Leave that terminal open. The sidecar is already running in the terminal window that opened automatically.
+
+---
+
+## If you prefer to run everything manually
+
+Stop any background processes and run in two terminals:
 
 1. **Gateway** (terminal 1):
    ```bash
    openclaw gateway
    ```
 
-2. **Sidecar** (terminal 2). Set the gateway URL (default port 18789; installer uses config when present):
+2. **Sidecar** (terminal 2):
    ```bash
    cd ~/.openclaw/sidecar/parallel-chat
    export OPENCLAW_GATEWAY_URL="http://127.0.0.1:18789"
@@ -72,7 +94,7 @@ If you prefer to run in the **foreground** (e.g. to see logs), stop the backgrou
 
 3. **Open your browser** at:  
    **http://127.0.0.1:3005/new**  
-   Each new tab (or each time you open that URL) is a separate, isolated chat session.
+   Each new tab is a separate, isolated chat session.
 
 **Ports:** Gateway port is read from `~/.openclaw/openclaw.json` (`gateway.http.port` or `gateway.port`) when present; otherwise **18789**. Sidecar uses **3005** by default; set `PORT` to override.
 
