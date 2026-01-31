@@ -381,15 +381,15 @@ EOF
 cd "$TARGET_DIR"
 npm install
 
-# Optional: enable gateway HTTP endpoint (only when interactive; skip when piped e.g. curl|bash)
+# Enable gateway HTTP endpoint (prompt if interactive, auto-enable if piped e.g. curl|bash)
 CONFIG_FILE="${HOME}/.openclaw/openclaw.json"
-enable_http=0
+enable_http=1
 if [[ -t 0 ]]; then
   echo ""
-  read -r -p "Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar; gateway will be restarted) [y/N] " REPLY
+  read -r -p "Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar) [Y/n] " REPLY
   case "$REPLY" in
-    [yY]) enable_http=1 ;;
-    [yY][eE][sS]) enable_http=1 ;;
+    [nN]) enable_http=0 ;;
+    [nN][oO]) enable_http=0 ;;
   esac
 fi
 if [[ "$enable_http" -eq 1 && -f "$CONFIG_FILE" ]]; then
@@ -416,18 +416,24 @@ elif [[ "$enable_http" -eq 1 ]]; then
 fi
 
 echo ""
-if [[ ! -t 0 ]]; then
-  echo "Tip: To enable the gateway HTTP endpoint, run this script again in a terminal (not via curl|bash) and answer y, or edit openclaw.json manually."
+echo "=========================================="
+echo "Install complete!"
+echo "=========================================="
+echo ""
+if [[ "$enable_http" -eq 1 ]]; then
+  echo "✓ Gateway HTTP chat endpoint enabled in openclaw.json"
+  echo ""
+  echo "IMPORTANT: Restart your gateway for changes to take effect:"
+  echo "  1. Stop the gateway (Ctrl+C if running in foreground)"
+  echo "  2. Start it: openclaw gateway"
   echo ""
 fi
-cat <<'EOF'
-Install complete.
-
-Next steps:
-  export OPENCLAW_GATEWAY_URL="http://127.0.0.1:18789"
-  # export OPENCLAW_GATEWAY_TOKEN="..."
-  npm start
-
-Open:
-  http://127.0.0.1:3005/new
-EOF
+echo "To start the sidecar:"
+echo "  cd ~/.openclaw/sidecar/parallel-chat"
+echo "  export OPENCLAW_GATEWAY_URL=\"http://127.0.0.1:18789\""
+echo "  npm start"
+echo ""
+echo "Then open: http://127.0.0.1:3005/new"
+echo ""
+echo "Each tab is an isolated chat session with your OpenClaw gateway."
+echo ""

@@ -4,7 +4,7 @@ Community add-ons and docs for [OpenClaw](https://github.com/mariozechner/opencl
 
 ---
 
-## What’s in this package
+## What's in this package
 
 - **Parallel Sidecar** — Run multiple isolated chat tabs (each tab is its own session). No need to fork the Control UI.
 - **Troubleshooting guide** — Fixes for Control UI, login, models, and Kimi-K2.5 issues (`docs/CLAWDBOT_TROUBLESHOOTING.md`).
@@ -16,10 +16,10 @@ Community add-ons and docs for [OpenClaw](https://github.com/mariozechner/opencl
 **macOS / Linux:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vidarbrekke/openclaw/v0.1.1/install-openclaw-parallel-sidecar.sh | bash
+curl -fsSL https://raw.githubusercontent.com/vidarbrekke/openclaw/v0.1.2/install-openclaw-parallel-sidecar.sh | bash
 ```
 
-When you use `curl ... | bash`, the script runs non-interactively (no prompt). To enable the HTTP endpoint, run the installer again in a terminal (e.g. `bash install-openclaw-parallel-sidecar.sh`) and answer **y**, or edit `~/.openclaw/openclaw.json` yourself.
+The installer automatically enables the gateway HTTP endpoint (answer "n" if you run it interactively and want to skip this).
 
 **Windows:**  
 Open PowerShell in the folder with the installer and run:
@@ -32,25 +32,26 @@ Or use Git Bash and run the same `curl | bash` line above; it will call the Powe
 
 ---
 
-## During install: the one question
+## During install
 
-The installer will ask:
+If you run the installer **interactively** (not via `curl|bash`), it will ask:
 
-**“Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar; gateway will be restarted) [y/N]”**
+**"Enable OpenClaw gateway HTTP chat endpoint? (required for sidecar) [Y/n]"**
 
-- **Say Yes (y)** if you want the sidecar to work without any extra config.  
-  The script will turn on the HTTP chat endpoint in your OpenClaw config. You must **restart the gateway** yourself (e.g. Ctrl+C then `openclaw gateway`) for the change to take effect.
-- **Say No (N)** if you prefer to change config or restart the gateway yourself.
+- Default is **Yes** — just press Enter to enable.
+- Say **No (n)** if you want to configure it yourself later.
+
+When installed via `curl ... | bash`, it **auto-enables** (assumes Yes).
 
 ---
 
 ## After install: run the sidecar
 
-1. **Start the gateway** (if it’s not already running):
+1. **Restart the gateway** (so the HTTP endpoint is active):
    ```bash
+   # Stop it (Ctrl+C if running in foreground)
    openclaw gateway
    ```
-   If you answered **Yes** to the question above, restart the gateway (Ctrl+C if it’s in the foreground, then run `openclaw gateway` again) so the HTTP endpoint is enabled.
 
 2. **Set the gateway URL** (in the same terminal or in your shell profile):
    ```bash
@@ -82,7 +83,7 @@ The installer will ask:
 
 - **OpenClaw** installed and configured.
 - **Node.js 18+** and **npm** (for the sidecar).
-- Gateway HTTP chat endpoint **enabled** (the installer can do this for you when you answer **Yes** to the question).
+- Gateway HTTP chat endpoint **enabled** (the installer does this automatically).
 
 ---
 
@@ -141,7 +142,7 @@ openclaw gateway
 
 ## Troubleshooting
 
-- **Sidecar says “Failed to load models” or chat doesn’t work**  
+- **Sidecar says "Failed to load models" or chat doesn't work**  
   Make sure the gateway HTTP chat endpoint is enabled and the gateway has been restarted. You can enable it yourself in `~/.openclaw/openclaw.json` (macOS/Linux) or `%USERPROFILE%\.openclaw\openclaw.json` (Windows) by adding or setting:
   ```json
   "gateway": {
