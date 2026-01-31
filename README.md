@@ -47,35 +47,34 @@ When installed via `curl ... | bash`, it **auto-enables** (assumes Yes).
 
 ## After install: run the sidecar
 
-1. **Restart the gateway** (so the HTTP endpoint is active):
+If you answered **Yes** (or used `curl|bash`), the installer **restarts the gateway and starts the sidecar in the background** so you can use them right away. Ports are read from your OpenClaw config when possible (default gateway **18789**, sidecar **3005**).
+
+If you prefer to run in the **foreground** (e.g. to see logs), stop the background processes and run in two terminals:
+
+1. **Gateway** (terminal 1):
    ```bash
-   # Stop it (Ctrl+C if running in foreground)
    openclaw gateway
    ```
 
-2. **Set the gateway URL** (in the same terminal or in your shell profile):
-   ```bash
-   export OPENCLAW_GATEWAY_URL="http://127.0.0.1:18789"
-   ```
-   If your gateway uses a token:
-   ```bash
-   export OPENCLAW_GATEWAY_TOKEN="your-token-here"
-   ```
-
-3. **Start the sidecar:**
+2. **Sidecar** (terminal 2). Set the gateway URL (default port 18789; installer uses config when present):
    ```bash
    cd ~/.openclaw/sidecar/parallel-chat
-   npm start
+   export OPENCLAW_GATEWAY_URL="http://127.0.0.1:18789"
+   # export OPENCLAW_GATEWAY_TOKEN="your-token-here"   # if your gateway uses a token
+   PORT=3005 npm start
    ```
    On Windows:
    ```powershell
    cd $env:USERPROFILE\.openclaw\sidecar\parallel-chat
+   $env:OPENCLAW_GATEWAY_URL = "http://127.0.0.1:18789"
    npm start
    ```
 
-4. **Open your browser** at:  
+3. **Open your browser** at:  
    **http://127.0.0.1:3005/new**  
    Each new tab (or each time you open that URL) is a separate, isolated chat session.
+
+**Ports:** Gateway port is read from `~/.openclaw/openclaw.json` (`gateway.http.port` or `gateway.port`) when present; otherwise **18789**. Sidecar uses **3005** by default; set `PORT` to override.
 
 ---
 

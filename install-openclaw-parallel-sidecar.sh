@@ -381,8 +381,20 @@ EOF
 cd "$TARGET_DIR"
 npm install
 
-# Enable gateway HTTP endpoint (prompt if interactive, auto-enable if piped e.g. curl|bash)
+# Ports: read from config when possible, else defaults
 CONFIG_FILE="${HOME}/.openclaw/openclaw.json"
+GW_PORT=18789
+SIDECAR_PORT=3005
+if [[ -f "$CONFIG_FILE" ]]; then
+  GW_PORT=$(node -e "
+    let j = {}; try { j = JSON.parse(require('fs').readFileSync(process.env.HOME + '/.openclaw/openclaw.json', 'utf8')); } catch (e) {}
+    const g = j.gateway || {}; const h = g.http || {};
+    const p = h.port || g.port;
+    console.log(typeof p === 'number' ? p : (typeof p === 'string' ? parseInt(p, 10) : 18789) || 18789);
+  " 2>/dev/null) || GW_PORT=18789
+fi
+
+# Enable gateway HTTP endpoint (prompt if interactive, auto-enable if piped e.g. curl|bash)
 enable_http=1
 if [[ -t 0 ]]; then
   echo ""
@@ -407,9 +419,13 @@ if [[ "$enable_http" -eq 1 && -f "$CONFIG_FILE" ]]; then
     "
     echo "Config updated (HTTP chat endpoint enabled)."
     echo ""
-    echo "IMPORTANT: Restart your gateway for changes to take effect:"
-    echo "   1. Stop the gateway (Ctrl+C if running in foreground, or: kill \$(pgrep -f openclaw-gateway))"
-    echo "   2. Start it again: openclaw gateway"
+    echo "Restarting gateway in background..."
+    openclaw gateway stop 2>/dev/null || true
+    pkill -f openclaw-gateway 2>/dev/null || true
+    sleep 2
+    nohup openclaw gateway >/dev/null 2>&1 &
+    echo "Starting sidecar in background..."
+    ( cd "$TARGET_DIR" && OPENCLAW_GATEWAY_URL="http://127.0.0.1:${GW_PORT}" PORT="$SIDECAR_PORT" nohup npm start >/dev/null 2>&1 & )
     echo ""
 elif [[ "$enable_http" -eq 1 ]]; then
   echo "Config not found at $CONFIG_FILE. Enable gateway.http.endpoints.chatCompletions.enabled manually, then stop the gateway (Ctrl+C) and run: openclaw gateway"
@@ -422,18 +438,20 @@ echo "=========================================="
 echo ""
 if [[ "$enable_http" -eq 1 ]]; then
   echo "✓ Gateway HTTP chat endpoint enabled in openclaw.json"
+  echo "✓ Gateway restarted in background (port ${GW_PORT})"
+  echo "✓ Sidecar started in background at http://127.0.0.1:${SIDECAR_PORT}/new"
   echo ""
-  echo "IMPORTANT: Restart your gateway for changes to take effect:"
-  echo "  1. Stop the gateway (Ctrl+C if running in foreground)"
-  echo "  2. Start it: openclaw gateway"
-  echo ""
+  echo "To run gateway or sidecar in the foreground (e.g. to see logs), stop the background processes and run in separate terminals:"
+  echo "  openclaw gateway"
+  echo "  cd ~/.openclaw/sidecar/parallel-chat && OPENCLAW_GATEWAY_URL=\"http://127.0.0.1:${GW_PORT}\" PORT=${SIDECAR_PORT} npm start"
+else
+  echo "To start the sidecar:"
+  echo "  cd ~/.openclaw/sidecar/parallel-chat"
+  echo "  export OPENCLAW_GATEWAY_URL=\"http://127.0.0.1:${GW_PORT}\""
+  echo "  PORT=${SIDECAR_PORT} npm start"
 fi
-echo "To start the sidecar:"
-echo "  cd ~/.openclaw/sidecar/parallel-chat"
-echo "  export OPENCLAW_GATEWAY_URL=\"http://127.0.0.1:18789\""
-echo "  npm start"
 echo ""
-echo "Then open: http://127.0.0.1:3005/new"
+echo "Open: http://127.0.0.1:${SIDECAR_PORT}/new"
 echo ""
 echo "Each tab is an isolated chat session with your OpenClaw gateway."
 echo ""
