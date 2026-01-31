@@ -43,6 +43,7 @@ The **Session Proxy** lets you open multiple browser tabs, each with its own iso
 
 - The proxy passes all requests through to the real Control UI (served by the gateway).
 - For chat-related requests, it adds `x-openclaw-session-key` based on a URL parameter/cookie.
+- **Gateway token is auto-injected:** the proxy reads `gateway.auth.token` from `~/.openclaw/openclaw.json` and appends it to the `/new` redirect URL. The Control UI picks it up from `?token=xxx` — no manual paste needed.
 - No UI replication — you always get the latest Control UI from OpenClaw.
 - When OpenClaw updates, the proxy continues to work (it's just a passthrough).
 
@@ -51,6 +52,7 @@ The **Session Proxy** lets you open multiple browser tabs, each with its own iso
 - `GATEWAY_URL` — OpenClaw gateway URL (default: `http://127.0.0.1:18789`)
 - `PROXY_PORT` — Port for the proxy (default: `3010`)
 - `SESSION_PREFIX` — Prefix for session keys (default: `proxy:`)
+- `OPENCLAW_GATEWAY_TOKEN` — Override token (otherwise read from `~/.openclaw/openclaw.json` → `gateway.auth.token`)
 
 ---
 

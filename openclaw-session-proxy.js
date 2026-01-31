@@ -1,10 +1,9 @@
 /**
  * OpenClaw Session Proxy
- * 
+ *
  * A thin proxy in front of the OpenClaw gateway that injects x-openclaw-session-key
- * into chat requests based on URL parameter. This allows multiple browser tabs to
- * have isolated chat sessions while sharing global settings.
- * 
+ * into chat requests and auto-injects the gateway token so users don't have to paste it.
+ *
  * Usage:
  *   GATEWAY_URL=http://127.0.0.1:18789 node openclaw-session-proxy.js
  *   Open: http://127.0.0.1:3010/new
@@ -12,6 +11,8 @@
 
 import http from "http";
 import https from "https";
+import fs from "fs";
+import path from "path";
 import { URL } from "url";
 import crypto from "crypto";
 
@@ -21,6 +22,19 @@ const SESSION_PREFIX = process.env.SESSION_PREFIX || "proxy:";
 
 const gatewayUrl = new URL(GATEWAY_URL);
 const gatewayProtocol = gatewayUrl.protocol === "https:" ? https : http;
+
+// Read gateway token from openclaw.json so we can auto-inject it (zero manual steps)
+let GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || "";
+if (!GATEWAY_TOKEN) {
+  const configPath =
+    process.env.OPENCLAW_CONFIG_PATH ||
+    path.join(process.env.HOME || process.env.USERPROFILE || "", ".openclaw", "openclaw.json");
+  try {
+    const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const t = cfg?.gateway?.auth?.token;
+    if (typeof t === "string" && t.trim()) GATEWAY_TOKEN = t.trim();
+  } catch (_) {}
+}
 
 function generateSessionKey() {
   return `${SESSION_PREFIX}${crypto.randomUUID()}`;
@@ -52,11 +66,13 @@ function shouldInjectSessionKey(method, path) {
 const server = http.createServer((req, res) => {
   const reqUrl = req.url || "/";
   
-  // Handle /new - generate session and redirect
+  // Handle /new - generate session, inject token, redirect (Control UI reads ?token= from URL)
   if (reqUrl === "/new" || reqUrl === "/new/") {
     const sessionKey = generateSessionKey();
+    const params = new URLSearchParams({ session: sessionKey });
+    if (GATEWAY_TOKEN) params.set("token", GATEWAY_TOKEN);
     res.writeHead(302, {
-      Location: `/?session=${encodeURIComponent(sessionKey)}`,
+      Location: `/?${params.toString()}`,
       "Set-Cookie": `openclaw_session=${encodeURIComponent(sessionKey)}; Path=/; SameSite=Lax`,
     });
     res.end();
@@ -172,6 +188,7 @@ server.listen(PROXY_PORT, "127.0.0.1", () => {
   console.log(`OpenClaw Session Proxy`);
   console.log(`  Proxying: ${GATEWAY_URL}`);
   console.log(`  Listening: http://127.0.0.1:${PROXY_PORT}`);
+  console.log(`  Gateway token: ${GATEWAY_TOKEN ? "auto-injected (from openclaw.json)" : "not found (paste in Control UI settings)"}`);
   console.log(``);
   console.log(`Open http://127.0.0.1:${PROXY_PORT}/new to start a new session`);
   console.log(`Each tab with /new gets an isolated chat session; settings are global.`);
