@@ -85,10 +85,12 @@ const server = http.createServer((req, res) => {
   // Extract session key from path /s/:sessionKey or URL param or cookie
   let sessionKey = null;
   let targetPath = reqUrl;
-  const pathMatch = reqUrl.match(/^\/s\/([^/?#]+)(\/?.*)$/);
+  const pathMatch = reqUrl.match(/^\/s\/([^/?#]+)(?:\/([^?#]*))?(\?.*)?$/);
   if (pathMatch) {
     sessionKey = decodeURIComponent(pathMatch[1]);
-    targetPath = pathMatch[2] || "/"; // strip /s/:sessionKey, forward rest to gateway
+    const subPath = pathMatch[2] || "";
+    const query = pathMatch[3] || "";
+    targetPath = "/" + subPath + query; // strip /s/:sessionKey; forward / or /path to gateway
   }
   if (!sessionKey) {
     sessionKey = extractSessionFromUrl(reqUrl) || extractSessionFromCookie(req.headers.cookie);
