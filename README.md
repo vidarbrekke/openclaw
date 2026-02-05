@@ -54,6 +54,7 @@ The **Session Proxy** lets you open multiple browser tabs, each with its own iso
 - `PROXY_PORT` — Port for the proxy (default: `3010`)
 - `SESSION_PREFIX` — Prefix for session keys (default: `proxy:`)
 - `OPENCLAW_GATEWAY_TOKEN` — Override token (otherwise read from `~/.openclaw/openclaw.json` → `gateway.auth.token`)
+- `ROUND_ROBIN_MODELS` — When set (or when `~/.openclaw/round-robin-models.json` exists), rotates model per chat completion. Config file overrides env. Install `skills/round-robin/` to let the agent list and edit models via conversation. See `docs/ROUND_ROBIN_MODEL_STRATEGY_EVALUATION.md`.
 
 ---
 

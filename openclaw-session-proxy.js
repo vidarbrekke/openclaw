@@ -15,6 +15,7 @@ import fs from "fs";
 import path from "path";
 import { URL } from "url";
 import crypto from "crypto";
+import { createRoundRobinState, transformChatBody, processRoundRobinCommands, isRoundRobinEnabled } from "./model-round-robin.js";
 
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:18789";
 const PROXY_PORT = Number(process.env.PROXY_PORT || 3010);
@@ -56,11 +57,25 @@ function extractSessionFromCookie(cookieHeader) {
 }
 
 function shouldInjectSessionKey(method, path) {
-  // Inject session key for chat-related endpoints
   if (method === "POST" && path.includes("/v1/chat/completions")) return true;
   if (method === "POST" && path.includes("/chat")) return true;
-  // Add more patterns as needed
   return false;
+}
+
+function isChatCompletions(method, path) {
+  return method === "POST" && path.includes("/v1/chat/completions");
+}
+
+const roundRobinModels = process.env.ROUND_ROBIN_MODELS;
+const roundRobinState = createRoundRobinState(roundRobinModels);
+
+// Per-session: roundRobinEnabled (default true when feature is on)
+const sessionRoundRobin = new Map();
+function getSessionRoundRobin(sk) {
+  return sessionRoundRobin.get(sk) ?? { roundRobinEnabled: true };
+}
+function setSessionRoundRobin(sk, s) {
+  sessionRoundRobin.set(sk, s);
 }
 
 const server = http.createServer((req, res) => {
@@ -113,6 +128,11 @@ const server = http.createServer((req, res) => {
     console.log(`[proxy] ${req.method} ${targetPath} -> session: ${sessionKey}`);
   }
 
+  const useRoundRobin = isRoundRobinEnabled(roundRobinModels) && isChatCompletions(req.method, targetPath);
+  if (useRoundRobin) {
+    proxyHeaders["content-length"] = undefined;
+  }
+
   const proxyOptions = {
     hostname: gatewayUrl.hostname,
     port: gatewayUrl.port || (gatewayUrl.protocol === "https:" ? 443 : 80),
@@ -155,7 +175,32 @@ const server = http.createServer((req, res) => {
     }
   });
 
-  req.pipe(proxyReq);
+  if (useRoundRobin) {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      const rawBody = Buffer.concat(chunks);
+      let parsed;
+      try {
+        parsed = JSON.parse(rawBody.toString("utf8"));
+      } catch {
+        parsed = {};
+      }
+      const sk = sessionKey || "default";
+      const getSession = () => getSessionRoundRobin(sk);
+      const setSession = (s) => setSessionRoundRobin(sk, s);
+      const { applyRoundRobin } = processRoundRobinCommands(parsed, getSession, setSession);
+      const modifiedBody = Buffer.from(JSON.stringify(parsed));
+      const { body, model } = transformChatBody(roundRobinState, modifiedBody, { applyRoundRobin });
+      proxyReq.setHeader("Content-Length", body.length);
+      proxyReq.write(body);
+      proxyReq.end();
+      if (applyRoundRobin && model) console.log(`[proxy] round-robin -> ${model}`);
+      else if (!applyRoundRobin) console.log(`[proxy] bypass (explicit model)`);
+    });
+  } else {
+    req.pipe(proxyReq);
+  }
 });
 
 // Handle WebSocket upgrade for real-time features
@@ -217,6 +262,10 @@ server.listen(PROXY_PORT, "127.0.0.1", () => {
   console.log(`  Proxying: ${GATEWAY_URL}`);
   console.log(`  Listening: http://127.0.0.1:${PROXY_PORT}`);
   console.log(`  Gateway token: ${GATEWAY_TOKEN ? "auto-injected (from openclaw.json)" : "not found (paste in Control UI settings)"}`);
+  if (roundRobinState?.getModels) {
+    const models = roundRobinState.getModels();
+    if (models?.length) console.log(`  Round-robin: ${models.length} models`);
+  }
   console.log(``);
   console.log(`Open http://127.0.0.1:${PROXY_PORT}/new to start a new session`);
   console.log(`Each tab with /new gets an isolated chat session; settings are global.`);
