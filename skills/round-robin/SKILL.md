@@ -27,27 +27,20 @@ The round-robin proxy rotates between multiple models on each prompt. Admins can
 
 ### 1. List Current Models
 
-Read the config file and report the models. If the file does not exist, report that round-robin uses the default list (env or built-in defaults).
+Use the **read** tool to read the config file. Path: `$HOME/.openclaw/round-robin-models.json` (or `~/.openclaw/round-robin-models.json`). If the file does not exist, report that round-robin uses the default list (env or built-in defaults).
 
-```bash
-read ~/.openclaw/round-robin-models.json
-```
-
-Parse and display the `models` array. Example response: "Round-robin currently uses: qwen3-coder-plus, kimi-k2.5, gemini-2.5-flash, claude-haiku-4.5, gpt-5.2-codex"
+Parse the JSON and display the `models` array. Example: "Round-robin currently uses: qwen3-coder-plus, kimi-k2.5, gemini-2.5-flash, claude-haiku-4.5, gpt-5.2-codex"
 
 ### 2. Update Model List
 
 When the user provides a new list (e.g. "Change round-robin to modelA, modelB, modelC" or after they respond to "Please provide a comma-separated list of model IDs"):
 
 1. Parse the comma-separated list into an array of model IDs (trim whitespace).
-2. Write the config file with the new list.
-
-```json
-{"models": ["model-id-1", "model-id-2", "model-id-3"]}
-```
-
-3. Ensure the directory exists: `~/.openclaw/`
-4. Write the file with valid JSON.
+2. Use the **write** tool to write the config file. Path: `$HOME/.openclaw/round-robin-models.json`. Content format:
+   ```json
+   {"models": ["model-id-1", "model-id-2", "model-id-3"]}
+   ```
+3. The `~/.openclaw/` directory must exist (create via exec if needed).
 
 ### 3. /round-robin edit Flow
 

@@ -4,10 +4,14 @@ Manage which models rotate in the OpenClaw round-robin proxy. List models, updat
 
 ## Install
 
-1. Copy the skill to your OpenClaw skills directory:
-   ```bash
-   cp -r skills/round-robin ~/.openclaw/skills/
-   ```
+From the clawd repo root:
+```bash
+./install-round-robin.sh
+```
+This copies the skill to `~/.openclaw/skills/round-robin/` and creates `~/.openclaw/round-robin-models.json` if missing.
+
+Or manually:
+1. Copy the skill: `cp -r skills/round-robin ~/.openclaw/skills/`
 
 2. Ensure the session proxy is started with round-robin enabled:
    ```bash
