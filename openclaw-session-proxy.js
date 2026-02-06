@@ -150,7 +150,8 @@ const server = http.createServer((req, res) => {
 
   const useRoundRobin = roundRobinAvailable && isRoundRobinEnabled(roundRobinModels) && isChatCompletions(req.method, targetPath);
   if (useRoundRobin) {
-    proxyHeaders["content-length"] = undefined;
+    delete proxyHeaders["content-length"];
+    delete proxyHeaders["transfer-encoding"];
   }
 
   const proxyOptions = {

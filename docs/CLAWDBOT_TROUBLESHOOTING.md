@@ -192,3 +192,21 @@ This is a documented issue with Kimi K2/K2.5 models when used through OpenRouter
   Or ensure `gateway.remote.token` in config matches `gateway.auth.token` when using remote mode.
 - **List models:** `openclaw models list`
 - **Onboard (configure providers):** `openclaw onboard`
+
+---
+
+## 6. Round-robin: responses disappear from chat UI
+
+### Symptoms
+When using the session proxy with round-robin enabled, assistant replies vanish from the chat UI before they complete or immediately after completing.
+
+### Cause
+The proxy was passing invalid request headers when buffering and transforming the chat body: `content-length: undefined` and leftover `transfer-encoding` could confuse the gateway or break the response stream.
+
+### Fix applied
+The proxy now uses `delete` for those headers instead of setting them to `undefined`, and removes `transfer-encoding` when sending a fixed-length body. Update to the latest clawd/openclaw-session-proxy.js and restart the proxy.
+
+### If it persists
+1. **Verify Control UI fix:** Section 1 above — if replies don't show when state becomes "final", the Control UI may need the history-refresh patch. That can also affect round-robin sessions.
+2. **Try without round-robin:** Start the proxy with `ROUND_ROBIN_MODELS=off ./start-session-proxy.sh`. If responses appear, the issue is round-robin–specific; if not, it's the Control UI or gateway.
+3. **Check proxy logs:** `/tmp/openclaw-proxy.log` — look for errors or early connection closure.
