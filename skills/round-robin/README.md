@@ -19,20 +19,24 @@ Self-contained package that rotates LLM models per prompt. Every query goes to t
 bash skills/round-robin/install.sh
 ```
 
-This installs three things:
-1. **Agent skill** → `~/.openclaw/skills/round-robin/` (so the agent can manage models)
+This installs four things and starts the proxy:
+1. **Agent skill** → `~/.openclaw/skills/round-robin/` (including install.sh for self-heal)
 2. **Core module** → `~/.openclaw/modules/model-round-robin.js` (loaded by the proxy at runtime)
 3. **Config file** → `~/.openclaw/round-robin-models.json` (editable model list)
+4. **Proxy** — kills any existing process on port 3010 and starts a fresh one in the background
 
 ## How it works
 
 - The session proxy dynamically loads `model-round-robin.js` on startup
 - Each chat completion request gets routed to the next model in the list
 - If the module isn't installed, the proxy runs normally (no round-robin)
+- **Self-healing:** Type `/round-robin` in OpenClaw — if the proxy is down, the agent runs the install script to restart it
 
 ## Usage
 
-- **Start:** `./start-session-proxy.sh` → open `http://127.0.0.1:3010/new`
+- **After install:** Open `http://127.0.0.1:3010/new`
+- **If proxy stopped:** Type `/round-robin` in any OpenClaw conversation — agent restarts it
+- **Activate / list / restart:** Type `/round-robin`
 - **Pin a model:** Type `/model openrouter/x/y` in your message
 - **Resume rotation:** Type `/round-robin`
 - **Edit models:** Edit `~/.openclaw/round-robin-models.json` or ask the agent "Edit round-robin"

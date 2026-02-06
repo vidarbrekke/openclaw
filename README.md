@@ -54,7 +54,7 @@ The **Session Proxy** lets you open multiple browser tabs, each with its own iso
 - `PROXY_PORT` — Port for the proxy (default: `3010`)
 - `SESSION_PREFIX` — Prefix for session keys (default: `proxy:`)
 - `OPENCLAW_GATEWAY_TOKEN` — Override token (otherwise read from `~/.openclaw/openclaw.json` → `gateway.auth.token`)
-- `ROUND_ROBIN_MODELS` — Round-robin is **on by default**. Set to `off` to disable. Set to comma-separated model IDs to override. Config file `~/.openclaw/round-robin-models.json` overrides env. Install with `bash skills/round-robin/install.sh`. See `skills/round-robin/README.md`.
+- `ROUND_ROBIN_MODELS` — Round-robin is **on by default**. Set to `off` to disable. Set to comma-separated model IDs to override. Config file `~/.openclaw/round-robin-models.json` overrides env. Install once with `bash skills/round-robin/install.sh`; after that, type `/round-robin` in any OpenClaw conversation to activate or restart. See `skills/round-robin/README.md`.
 
 ---
 

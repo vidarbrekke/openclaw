@@ -80,24 +80,22 @@ Provides a single source of truth for round-robin logic, supports both session-p
 
 ## Implementation
 
-**Files:**
-- `model-round-robin.js` — shared module (`createRoundRobinState`, `transformChatBody`)
-- `openclaw-session-proxy.js` — integrates round-robin when `ROUND_ROBIN_MODELS` is set
+**Package:** Self-contained `skills/round-robin/` with:
+- `model-round-robin.js` — shared module (`createRoundRobinState`, `transformChatBody`, `processRoundRobinCommands`)
 - `model-round-robin-proxy.js` — standalone proxy for direct gateway users
+- `install.sh` — copies skill, module, config; kills and restarts the session proxy
+- `SKILL.md` — agent instructions; when proxy is down, agent runs install script (self-heal)
 
-**Usage (Session Proxy):**
+**Session proxy:** `openclaw-session-proxy.js` dynamically imports the module from `skills/round-robin/`, `~/.openclaw/modules/`, or repo root. Round-robin is **on by default** unless `ROUND_ROBIN_MODELS=off`.
+
+**Install:**
 ```bash
-ROUND_ROBIN_MODELS="openrouter/qwen/qwen3-coder-plus,openrouter/moonshotai/kimi-k2.5,openrouter/google/gemini-2.5-flash" \
-  GATEWAY_URL=http://127.0.0.1:18789 node openclaw-session-proxy.js
+bash skills/round-robin/install.sh
 ```
-Then open `http://127.0.0.1:3010/new`. Each chat completion rotates through the models.
+Installs to `~/.openclaw/skills/round-robin/` and `~/.openclaw/modules/`, creates config, starts the proxy. Open `http://127.0.0.1:3010/new`.
 
-**Usage (Standalone):**
-```bash
-ROUND_ROBIN_MODELS="m1,m2,m3,m4,m5" GATEWAY_URL=http://127.0.0.1:18789 node model-round-robin-proxy.js
-```
-Connect clients to `http://127.0.0.1:3011` (or set `PORT`).
+**One command after install:** Type `/round-robin` in any OpenClaw conversation. The agent checks if the proxy is running; if not, it runs the install script to restart it. Lists models and gives the link.
 
-**Defaults:** If `ROUND_ROBIN_MODELS` is unset and no config file exists, round-robin is disabled. With env or config file, defaults are: qwen3-coder-plus, kimi-k2.5, gemini-2.5-flash, claude-haiku-4.5, gpt-5.2-codex.
+**Defaults:** Round-robin is on by default. Set `ROUND_ROBIN_MODELS=off` to disable. Config file `~/.openclaw/round-robin-models.json` overrides env. Default models: qwen3-coder-plus, kimi-k2.5, gemini-2.5-flash, claude-haiku-4.5, gpt-5.2-codex.
 
-**Skill (admin edits):** Install `skills/round-robin/` to let the agent list and update models via conversation. Config file: `~/.openclaw/round-robin-models.json`. The agent reads/writes this file when you say "edit round-robin" or "change round-robin models to X, Y, Z".
+**Skill (admin edits):** Say "Edit round-robin" or "Change round-robin to modelX, modelY, modelZ" — the agent updates `~/.openclaw/round-robin-models.json`. Changes take effect immediately (no restart).
