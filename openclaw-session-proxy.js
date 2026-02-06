@@ -15,6 +15,7 @@ import fs from "fs";
 import path from "path";
 import { URL, pathToFileURL } from "url";
 import crypto from "crypto";
+import { Transform } from "stream";
 
 // Dynamic import: try multiple locations for the round-robin module.
 // Order: local dev (skills/round-robin/) → repo root (compat) → global install (~/.openclaw/modules/)
@@ -38,7 +39,8 @@ const { createRoundRobinState, transformChatBody, processRoundRobinCommands, isR
 
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:18789";
 const PROXY_PORT = Number(process.env.PROXY_PORT || 3010);
-const SESSION_PREFIX = process.env.SESSION_PREFIX || "proxy:";
+// Use gateway canonical format (agent:main:proxy:uuid) so chat "final" events match Control UI sessionKey
+const SESSION_PREFIX = process.env.SESSION_PREFIX || "agent:main:proxy:";
 
 const gatewayUrl = new URL(GATEWAY_URL);
 const gatewayProtocol = gatewayUrl.protocol === "https:" ? https : http;
@@ -89,18 +91,42 @@ const roundRobinModels = process.env.ROUND_ROBIN_MODELS;
 const roundRobinAvailable = !!(rr && createRoundRobinState);
 const roundRobinState = roundRobinAvailable ? createRoundRobinState(roundRobinModels) : null;
 
-// Per-session: roundRobinEnabled (default true when feature is on)
-const sessionRoundRobin = new Map();
+// Per-session: roundRobinEnabled + index (default true when feature is on)
 function getSessionRoundRobin(sk) {
-  return sessionRoundRobin.get(sk) ?? { roundRobinEnabled: true };
+  return getRotationState(sk);
 }
 function setSessionRoundRobin(sk, s) {
-  sessionRoundRobin.set(sk, s);
+  SESSION_ROTATION_STATE.set(sk, s);
 }
 
 const server = http.createServer((req, res) => {
   const reqUrl = req.url || "/";
   
+  // Debug: round-robin status
+  if (reqUrl === "/round-robin/status") {
+    const models = roundRobinState?.getModels?.() ?? [];
+    const sessions = {};
+    for (const [key, value] of SESSION_ROTATION_STATE.entries()) {
+      sessions[key] = {
+        roundRobinEnabled: value.roundRobinEnabled !== false,
+        index: value.index ?? 0,
+        lastAppliedModel: value.lastAppliedModel ?? null,
+      };
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify(
+        {
+          enabled: isRoundRobinEnabled(roundRobinModels),
+          models,
+          sessions,
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
   // Handle /new - generate session, inject token, redirect to path-based URL
   // Path /s/:sessionKey gives each tab its own cookie scope (Path=/s/xxx) so tabs don't overwrite each other
   if (reqUrl === "/new" || reqUrl === "/new/") {
@@ -142,10 +168,14 @@ const server = http.createServer((req, res) => {
   // Update host header
   proxyHeaders.host = gatewayUrl.host;
   
-  // Inject session key for chat requests
-  if (sessionKey && shouldInjectSessionKey(req.method, targetPath)) {
+  // Inject session key for all requests when we have one (chat, history, API, etc.)
+  // Without this, load-history (GET /api/chat/history) gets no session and returns empty;
+  // the UI clears streaming content and never refreshes, so the response disappears.
+  if (sessionKey) {
     proxyHeaders["x-openclaw-session-key"] = sessionKey;
-    console.log(`[proxy] ${req.method} ${targetPath} -> session: ${sessionKey}`);
+    if (shouldInjectSessionKey(req.method, targetPath)) {
+      console.log(`[proxy] ${req.method} ${targetPath} -> session: ${sessionKey}`);
+    }
   }
 
   const useRoundRobin = roundRobinAvailable && isRoundRobinEnabled(roundRobinModels) && isChatCompletions(req.method, targetPath);
@@ -212,17 +242,200 @@ const server = http.createServer((req, res) => {
       const setSession = (s) => setSessionRoundRobin(sk, s);
       const { applyRoundRobin } = processRoundRobinCommands(parsed, getSession, setSession);
       const modifiedBody = Buffer.from(JSON.stringify(parsed));
-      const { body, model } = transformChatBody(roundRobinState, modifiedBody, { applyRoundRobin });
+      // Per-session rotation index (was global - all sessions shared one index)
+      const sessionState = getSession();
+      const perSessionState = {
+        index: sessionState.index ?? 0,
+        getModels: roundRobinState.getModels,
+      };
+      const { body, model } = transformChatBody(perSessionState, modifiedBody, { applyRoundRobin });
+      setSession({ ...sessionState, index: perSessionState.index });
       proxyReq.setHeader("Content-Length", body.length);
       proxyReq.write(body);
       proxyReq.end();
-      if (applyRoundRobin && model) console.log(`[proxy] round-robin -> ${model}`);
+      if (applyRoundRobin && model) console.log(`[proxy] round-robin [${sk}] -> ${model}`);
       else if (!applyRoundRobin) console.log(`[proxy] bypass (explicit model)`);
     });
   } else {
     req.pipe(proxyReq);
   }
 });
+
+// --- Round-robin via sessions.json model override ---
+// The gateway reads modelOverride/providerOverride from sessions.json on every run.
+// We write the next round-robin model there before forwarding the chat.send frame.
+// This works for WebSocket chat (Control UI), cron jobs, hooks — anything using that session.
+const SESSIONS_JSON_PATH = path.join(home, ".openclaw", "agents", "main", "sessions", "sessions.json");
+const SESSION_ROTATION_STATE = new Map();
+const SESSION_UPDATED_AT = new Map();
+let sessionsWriteInFlight = false;
+
+function getRotationState(sk) {
+  const existing = SESSION_ROTATION_STATE.get(sk) ?? { roundRobinEnabled: true };
+  if (!SESSION_ROTATION_STATE.has(sk)) SESSION_ROTATION_STATE.set(sk, existing);
+  return existing;
+}
+
+function applyRoundRobinModelOverrideToStore(store, sessionKey) {
+  if (!roundRobinAvailable || !roundRobinState?.getModels) return null;
+  if (!isRoundRobinEnabled(roundRobinModels)) return null;
+
+  const sk = sessionKey || "default";
+  const session = getRotationState(sk);
+  if (!session.roundRobinEnabled) return null;
+
+  const models = roundRobinState.getModels();
+  if (!models.length) return null;
+
+  const idx = session.index ?? 0;
+  const fullModel = models[idx % models.length];
+  SESSION_ROTATION_STATE.set(sk, {
+    ...session,
+    index: (idx + 1) % models.length,
+    lastAppliedModel: fullModel,
+  });
+
+  // Parse "provider/org/model" → provider="provider", model="org/model"
+  // e.g. "openrouter/google/gemini-2.5-flash" → provider="openrouter", model="google/gemini-2.5-flash"
+  const slashIdx = fullModel.indexOf("/");
+  const provider = slashIdx > 0 ? fullModel.slice(0, slashIdx) : undefined;
+  const model = slashIdx > 0 ? fullModel.slice(slashIdx + 1) : fullModel;
+
+  // Update store entry in-memory (caller handles write)
+  const storeKey = Object.keys(store).find((k) => k === sessionKey || k.endsWith(`:${sessionKey}`)) || sessionKey;
+  if (!store[storeKey]) {
+    store[storeKey] = { sessionId: crypto.randomUUID(), updatedAt: Date.now() };
+  }
+  store[storeKey].modelOverride = model;
+  if (provider) store[storeKey].providerOverride = provider;
+  store[storeKey].updatedAt = Date.now();
+  console.log(`[proxy] round-robin [${sk}] -> ${fullModel} (via sessions.json)`);
+  return fullModel;
+}
+
+// --- WebSocket frame helpers ---
+// WebSocket frames from the Control UI are JSON-RPC: {"type":"req","id":"...","method":"chat.send","params":{...}}
+// We intercept text frames to detect chat.send and apply model override before forwarding.
+function consumeWsTextFrames(buffer) {
+  const frames = [];
+  let offset = 0;
+  while (buffer.length - offset >= 2) {
+    const byte0 = buffer[offset];
+    const byte1 = buffer[offset + 1];
+    const fin = (byte0 & 0x80) !== 0;
+    const opcode = byte0 & 0x0f;
+    const masked = (byte1 & 0x80) !== 0;
+    let payloadLen = byte1 & 0x7f;
+    let headerLen = 2;
+    if (payloadLen === 126) {
+      if (buffer.length - offset < 4) break;
+      payloadLen = buffer.readUInt16BE(offset + 2);
+      headerLen = 4;
+    } else if (payloadLen === 127) {
+      if (buffer.length - offset < 10) break;
+      payloadLen = Number(buffer.readBigUInt64BE(offset + 2));
+      headerLen = 10;
+    }
+    const maskLen = masked ? 4 : 0;
+    const frameLen = headerLen + maskLen + payloadLen;
+    if (buffer.length - offset < frameLen) break;
+
+    const maskOffset = offset + headerLen;
+    const payloadOffset = maskOffset + maskLen;
+    const payload = Buffer.from(buffer.slice(payloadOffset, payloadOffset + payloadLen));
+    if (masked) {
+      const maskKey = buffer.slice(maskOffset, maskOffset + 4);
+      for (let i = 0; i < payload.length; i++) payload[i] ^= maskKey[i % 4];
+    }
+
+    // Only parse complete text frames (FIN + opcode 1)
+    if (fin && opcode === 1) {
+      try {
+        const parsed = JSON.parse(payload.toString("utf8"));
+        frames.push(parsed);
+      } catch {
+        // ignore non-JSON payloads
+      }
+    }
+    offset += frameLen;
+  }
+  return { frames, remainder: buffer.slice(offset) };
+}
+
+function shouldRotateForEntry(sessionKey, entry) {
+  const sk = sessionKey || "default";
+  const state = getRotationState(sk);
+  if (!state.roundRobinEnabled) return false;
+  const lastApplied = state.lastAppliedModel;
+  const currentOverride = entry?.modelOverride;
+  // If user pinned a model, don't override it.
+  if (currentOverride && currentOverride !== lastApplied) return false;
+  return true;
+}
+
+function updateRotationFromStore() {
+  if (!fs.existsSync(SESSIONS_JSON_PATH)) return;
+  if (sessionsWriteInFlight) return;
+  let store = {};
+  try {
+    store = JSON.parse(fs.readFileSync(SESSIONS_JSON_PATH, "utf8"));
+  } catch {
+    return;
+  }
+  let changed = false;
+  for (const [key, entry] of Object.entries(store)) {
+    const updatedAt = typeof entry?.updatedAt === "number" ? entry.updatedAt : 0;
+    const lastSeen = SESSION_UPDATED_AT.get(key) ?? 0;
+    if (updatedAt <= lastSeen) continue;
+    SESSION_UPDATED_AT.set(key, updatedAt);
+    if (!shouldRotateForEntry(key, entry)) continue;
+    const applied = applyRoundRobinModelOverrideToStore(store, key);
+    if (applied) changed = true;
+  }
+  if (!changed) return;
+  try {
+    sessionsWriteInFlight = true;
+    fs.writeFileSync(SESSIONS_JSON_PATH, JSON.stringify(store, null, 2), "utf8");
+  } catch (err) {
+    console.error(`[proxy] round-robin sessions.json write failed:`, err.message);
+  } finally {
+    sessionsWriteInFlight = false;
+  }
+}
+
+function rotateSessionOverride(sessionKey) {
+  if (!fs.existsSync(SESSIONS_JSON_PATH)) return;
+  if (sessionsWriteInFlight) return;
+  let store = {};
+  try {
+    store = JSON.parse(fs.readFileSync(SESSIONS_JSON_PATH, "utf8"));
+  } catch {
+    return;
+  }
+  const entry = store[sessionKey];
+  if (!shouldRotateForEntry(sessionKey, entry)) return;
+  const applied = applyRoundRobinModelOverrideToStore(store, sessionKey);
+  if (!applied) return;
+  try {
+    sessionsWriteInFlight = true;
+    fs.writeFileSync(SESSIONS_JSON_PATH, JSON.stringify(store, null, 2), "utf8");
+  } catch (err) {
+    console.error(`[proxy] round-robin sessions.json write failed:`, err.message);
+  } finally {
+    sessionsWriteInFlight = false;
+  }
+}
+
+function startSessionsWatcher() {
+  try {
+    fs.watch(SESSIONS_JSON_PATH, { persistent: true }, () => {
+      // Debounce: multiple events can fire; one sync read is fine.
+      updateRotationFromStore();
+    });
+  } catch (err) {
+    console.error(`[proxy] sessions.json watch failed:`, err.message);
+  }
+}
 
 // Handle WebSocket upgrade for real-time features
 server.on("upgrade", (req, socket, head) => {
@@ -273,8 +486,39 @@ server.on("upgrade", (req, socket, head) => {
       socket.write(proxyHead);
     }
     
-    proxySocket.pipe(socket);
-    socket.pipe(proxySocket);
+    // Inspect client→gateway frames without modifying the stream.
+  if (roundRobinAvailable && isRoundRobinEnabled(roundRobinModels)) {
+      let wsBuffer = Buffer.alloc(0);
+      const inspectStream = new Transform({
+        transform(chunk, _enc, cb) {
+          wsBuffer = Buffer.concat([wsBuffer, chunk]);
+          const { frames, remainder } = consumeWsTextFrames(wsBuffer);
+          wsBuffer = remainder;
+          for (const parsed of frames) {
+            if (parsed?.type === "req" && parsed?.method === "chat.send" && parsed?.params?.sessionKey) {
+              const sk = parsed.params.sessionKey;
+              const msgText = (parsed.params.message || "").trim();
+              const session = getRotationState(sk);
+              if (/\/model\b/i.test(msgText)) {
+                SESSION_ROTATION_STATE.set(sk, { ...session, roundRobinEnabled: false });
+                console.log(`[proxy] round-robin disabled for ${sk} (/model command)`);
+              } else if (/\/round-robin\b/i.test(msgText)) {
+                SESSION_ROTATION_STATE.set(sk, { ...session, roundRobinEnabled: true });
+                console.log(`[proxy] round-robin re-enabled for ${sk}`);
+              }
+              // Rotate immediately for chat turns
+              rotateSessionOverride(sk);
+            }
+          }
+          cb(null, chunk);
+        },
+      });
+      socket.pipe(inspectStream).pipe(proxySocket);
+      proxySocket.pipe(socket);
+    } else {
+      proxySocket.pipe(socket);
+      socket.pipe(proxySocket);
+    }
     
     proxySocket.on("error", () => socket.destroy());
     socket.on("error", () => proxySocket.destroy());
@@ -302,4 +546,5 @@ server.listen(PROXY_PORT, "127.0.0.1", () => {
   console.log(``);
   console.log(`Open http://127.0.0.1:${PROXY_PORT}/new to start a new session`);
   console.log(`Each tab with /new gets an isolated chat session; settings are global.`);
+  startSessionsWatcher();
 });

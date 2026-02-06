@@ -1,0 +1,7 @@
+{
+  "name": "clawd",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

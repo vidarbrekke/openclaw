@@ -61,11 +61,10 @@ export function isRoundRobinEnabled(env) {
 /**
  * @param {string|undefined} env - Comma-separated model IDs from ROUND_ROBIN_MODELS
  * @param {string|undefined} configPath - Override config path (default: ~/.openclaw/round-robin-models.json)
- * @returns {{ index: number, getModels: () => string[] }}
+ * @returns {{ getModels: () => string[] }} Shared models list only; index is tracked per-session by the caller
  */
 export function createRoundRobinState(env, configPath) {
   return {
-    index: 0,
     getModels: () => resolveModels(env, configPath).models,
   };
 }

@@ -206,6 +206,8 @@ The WebSocket upgrade handler was forwarding the full path (e.g. `/s/proxy:xxx/`
 ### Fix applied
 1. **WebSocket path stripping:** The proxy now strips `/s/:sessionKey` from the WebSocket upgrade path before forwarding (same as HTTP). So `/s/proxy:xxx/` → `/`, `/s/proxy:xxx/ws` → `/ws`. The gateway receives the path it expects.
 2. **Request headers:** The proxy also uses `delete` for `content-length` and `transfer-encoding` when buffering the round-robin body, instead of invalid values.
+3. **Session header for all requests:** The proxy now injects `x-openclaw-session-key` for **every** proxied request when a session exists, not just POST to chat.
+4. **Session key format:** The proxy now uses the gateway's canonical format `agent:main:proxy:uuid` (was `proxy:uuid`). The Control UI filters chat events by `sessionKey`; when the gateway broadcasts "final" with `agent:main:proxy:uuid` but the UI had `proxy:uuid`, the event was ignored and history never refreshed.
 
 Update to the latest clawd/openclaw-session-proxy.js and restart the proxy.
 
