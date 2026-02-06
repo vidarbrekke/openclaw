@@ -200,13 +200,16 @@ This is a documented issue with Kimi K2/K2.5 models when used through OpenRouter
 ### Symptoms
 When using the session proxy with round-robin enabled, assistant replies vanish from the chat UI before they complete or immediately after completing.
 
-### Cause
-The proxy was passing invalid request headers when buffering and transforming the chat body: `content-length: undefined` and leftover `transfer-encoding` could confuse the gateway or break the response stream.
+### Root cause (fixed)
+The WebSocket upgrade handler was forwarding the full path (e.g. `/s/proxy:xxx/`) to the gateway. The gateway expects `/` or `/ws`, not `/s/proxy:xxx/`. The WebSocket failed to connect properly, so the Control UI never received the `chat` / `state: "final"` event. Without that event (or with a broken WebSocket), the UI clears the streaming content and doesn't refresh history — the message appears to disappear.
 
 ### Fix applied
-The proxy now uses `delete` for those headers instead of setting them to `undefined`, and removes `transfer-encoding` when sending a fixed-length body. Update to the latest clawd/openclaw-session-proxy.js and restart the proxy.
+1. **WebSocket path stripping:** The proxy now strips `/s/:sessionKey` from the WebSocket upgrade path before forwarding (same as HTTP). So `/s/proxy:xxx/` → `/`, `/s/proxy:xxx/ws` → `/ws`. The gateway receives the path it expects.
+2. **Request headers:** The proxy also uses `delete` for `content-length` and `transfer-encoding` when buffering the round-robin body, instead of invalid values.
+
+Update to the latest clawd/openclaw-session-proxy.js and restart the proxy.
 
 ### If it persists
 1. **Verify Control UI fix:** Section 1 above — if replies don't show when state becomes "final", the Control UI may need the history-refresh patch. That can also affect round-robin sessions.
 2. **Try without round-robin:** Start the proxy with `ROUND_ROBIN_MODELS=off ./start-session-proxy.sh`. If responses appear, the issue is round-robin–specific; if not, it's the Control UI or gateway.
-3. **Check proxy logs:** `/tmp/openclaw-proxy.log` — look for errors or early connection closure.
+3. **Check proxy logs:** `/tmp/openclaw-proxy.log` — look for `WebSocket upgrade -> session: ... path: /` to confirm path stripping.

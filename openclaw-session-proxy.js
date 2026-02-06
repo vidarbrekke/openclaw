@@ -227,9 +227,19 @@ const server = http.createServer((req, res) => {
 // Handle WebSocket upgrade for real-time features
 server.on("upgrade", (req, socket, head) => {
   const reqUrl = req.url || "/";
-  const sessionFromUrl = extractSessionFromUrl(reqUrl);
-  const sessionFromCookie = extractSessionFromCookie(req.headers.cookie);
-  const sessionKey = sessionFromUrl || sessionFromCookie;
+  // Strip /s/:sessionKey from path so gateway gets / or /ws, not /s/proxy:xxx/
+  let targetPath = reqUrl;
+  const pathMatch = reqUrl.match(/^\/s\/([^/?#]+)(?:\/([^?#]*))?(\?.*)?$/);
+  let sessionKey = null;
+  if (pathMatch) {
+    sessionKey = decodeURIComponent(pathMatch[1]);
+    const subPath = pathMatch[2] || "";
+    const query = pathMatch[3] || "";
+    targetPath = "/" + subPath + query;
+  }
+  if (!sessionKey) {
+    sessionKey = extractSessionFromUrl(reqUrl) || extractSessionFromCookie(req.headers.cookie);
+  }
 
   const proxyHeaders = { ...req.headers };
   proxyHeaders.host = gatewayUrl.host;
@@ -237,13 +247,13 @@ server.on("upgrade", (req, socket, head) => {
   // Inject session key into WebSocket connection
   if (sessionKey) {
     proxyHeaders["x-openclaw-session-key"] = sessionKey;
-    console.log(`[proxy] WebSocket upgrade -> session: ${sessionKey}`);
+    console.log(`[proxy] WebSocket upgrade -> session: ${sessionKey} path: ${targetPath}`);
   }
 
   const proxyOptions = {
     hostname: gatewayUrl.hostname,
     port: gatewayUrl.port || (gatewayUrl.protocol === "https:" ? 443 : 80),
-    path: reqUrl,
+    path: targetPath,
     method: "GET",
     headers: proxyHeaders,
   };
