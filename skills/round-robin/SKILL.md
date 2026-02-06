@@ -35,21 +35,20 @@ lsof -ti :3010 >/dev/null 2>&1 && echo "RUNNING" || echo "STOPPED"
 ```
 
 - If **RUNNING**: proceed to the next action.
-- If **STOPPED**: start the proxy in the background. Find the repo directory that contains `start-session-proxy.sh`:
+- If **STOPPED**: run the install script (it is self-healing: copies files, starts proxy):
 
 ```bash
-CLAWD_DIR="$(find /Users -maxdepth 4 -name 'start-session-proxy.sh' -path '*/clawd/*' 2>/dev/null | head -1 | xargs dirname)"
-if [ -n "$CLAWD_DIR" ]; then
-  cd "$CLAWD_DIR" && nohup bash start-session-proxy.sh > /tmp/openclaw-proxy.log 2>&1 &
-  sleep 1
-  lsof -ti :3010 >/dev/null 2>&1 && echo "STARTED" || echo "FAILED"
-else
-  echo "NOT_FOUND"
-fi
+bash "$HOME/.openclaw/skills/round-robin/install.sh"
+```
+
+Then check again:
+
+```bash
+lsof -ti :3010 >/dev/null 2>&1 && echo "STARTED" || echo "FAILED"
 ```
 
 - If **STARTED**: tell the user: "Round-robin proxy is now active. Open **http://127.0.0.1:3010/new** to start a session with model rotation."
-- If **FAILED** or **NOT_FOUND**: tell the user: "Could not start the session proxy. Please run `./start-session-proxy.sh` manually from the clawd directory."
+- If **FAILED**: tell the user: "Could not start the session proxy. Ensure the clawd repo (with openclaw-session-proxy.js) is at $HOME/Dev/CursorApps/clawd or $HOME/clawd, then run: bash $HOME/.openclaw/skills/round-robin/install.sh"
 
 ### 1. List Current Models
 

@@ -14,12 +14,15 @@ DEFAULT_MODELS='["openrouter/qwen/qwen3-coder-plus","openrouter/moonshotai/kimi-
 echo "Installing round-robin model rotation..."
 echo ""
 
-# 1. Install the agent skill (SKILL.md + docs)
+# 1. Install the agent skill (SKILL.md + docs + install.sh + JS for self-heal)
 echo "1. Agent skill → ${SKILLS_DIR}/"
 mkdir -p "$SKILLS_DIR"
-cp "$SKILL_DIR/SKILL.md" "$SKILLS_DIR/"
-cp "$SKILL_DIR/README.md" "$SKILLS_DIR/"
-cp "$SKILL_DIR/USAGE.md" "$SKILLS_DIR/"
+set +e
+for f in SKILL.md README.md USAGE.md install.sh model-round-robin.js model-round-robin-proxy.js; do
+  [ -f "$SKILL_DIR/$f" ] && cp "$SKILL_DIR/$f" "$SKILLS_DIR/" 2>/dev/null
+done
+set -e
+chmod +x "$SKILLS_DIR/install.sh"
 
 # 2. Install the core module (proxy loads this at runtime)
 echo "2. Core module → ${MODULES_DIR}/model-round-robin.js"
