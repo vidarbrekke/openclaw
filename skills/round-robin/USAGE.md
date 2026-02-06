@@ -4,12 +4,16 @@
 
 ## Setup
 
-1. **Enable round-robin** — Start the session proxy with:
+1. **Start the session proxy** — Round-robin is on by default:
    ```bash
-   ROUND_ROBIN_MODELS="" ./start-session-proxy.sh
+   ./start-session-proxy.sh
    ```
+   To disable: `ROUND_ROBIN_MODELS=off ./start-session-proxy.sh`
 
-2. **Install the skill** — Copy `skills/round-robin/` into `~/.openclaw/skills/`.
+2. **Install the skill** (optional, for agent-managed edits):
+   ```bash
+   ./install-round-robin.sh
+   ```
 
 3. **Edit models** — Edit `~/.openclaw/round-robin-models.json`:
    ```json

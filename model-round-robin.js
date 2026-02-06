@@ -50,13 +50,12 @@ export function resolveModels(env, configPath) {
 }
 
 /**
- * Round-robin is enabled when config file exists with models OR ROUND_ROBIN_MODELS env is set.
+ * Round-robin is always enabled by default.
+ * Disable explicitly with ROUND_ROBIN_MODELS=off.
  */
-export function isRoundRobinEnabled(env, configPath) {
-  const filePath = configPath || getRoundRobinConfigPath();
-  if (loadModelsFromFile(filePath)) return true;
-  if (env !== undefined) return true; // env set (including "") enables it
-  return false;
+export function isRoundRobinEnabled(env) {
+  if (env !== undefined && env.trim().toLowerCase() === "off") return false;
+  return true;
 }
 
 /**

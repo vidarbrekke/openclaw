@@ -58,6 +58,8 @@ If the user types "/round-robin edit" or asks to "edit round-robin":
 
 ## Notes
 
-- Round-robin is only active when the session proxy is started with `ROUND_ROBIN_MODELS` set (env var or config file).
+- Round-robin is **on by default** when using the session proxy. No env var needed.
+- To disable: set `ROUND_ROBIN_MODELS=off` when starting the proxy.
 - Model IDs must be valid OpenClaw model identifiers (e.g. `openrouter/qwen/qwen3-coder-plus`).
-- The config file overrides `ROUND_ROBIN_MODELS` env var when it exists.
+- The config file `~/.openclaw/round-robin-models.json` overrides `ROUND_ROBIN_MODELS` env var when it exists.
+- Using `/model <id>` bypasses round-robin until `/round-robin` re-enables it.

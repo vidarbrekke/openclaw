@@ -24,7 +24,7 @@ fi
 
 echo ""
 echo "Next steps:"
-echo "  1. Start session proxy with round-robin: ROUND_ROBIN_MODELS=\"\" $SCRIPT_DIR/start-session-proxy.sh"
+echo "  1. Start session proxy (round-robin is on by default): $SCRIPT_DIR/start-session-proxy.sh"
 echo "  2. Restart OpenClaw gateway if running: openclaw gateway stop && openclaw gateway"
 echo "  3. Open http://127.0.0.1:3010/new"
 echo ""
