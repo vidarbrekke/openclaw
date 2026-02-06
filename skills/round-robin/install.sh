@@ -38,24 +38,55 @@ else
   echo "4. Config exists → ${CONFIG_FILE} (unchanged)"
 fi
 
+# 5. Find the clawd repo (contains start-session-proxy.sh + openclaw-session-proxy.js)
+PROXY_PORT="${PROXY_PORT:-3010}"
+REPO_DIR=""
+# Try: parent of skill dir, then common locations
+for candidate in \
+  "$(cd "$SKILL_DIR/../.." 2>/dev/null && pwd)" \
+  "$HOME/Dev/CursorApps/clawd" \
+  "$HOME/clawd"; do
+  if [ -f "$candidate/openclaw-session-proxy.js" ]; then
+    REPO_DIR="$candidate"
+    break
+  fi
+done
+
+# 6. Start the session proxy (kill existing, start fresh)
+if [ -n "$REPO_DIR" ]; then
+  echo ""
+  echo "5. Starting session proxy..."
+  # Kill any existing process on the proxy port
+  EXISTING_PID=$(lsof -ti :${PROXY_PORT} 2>/dev/null | grep -v "^$" | head -1)
+  if [ -n "$EXISTING_PID" ]; then
+    kill "$EXISTING_PID" 2>/dev/null
+    sleep 1
+    echo "   Stopped previous proxy (PID $EXISTING_PID)"
+  fi
+  # Start proxy in background
+  cd "$REPO_DIR"
+  nohup bash start-session-proxy.sh > /tmp/openclaw-proxy.log 2>&1 &
+  PROXY_PID=$!
+  sleep 1
+  if lsof -ti :${PROXY_PORT} >/dev/null 2>&1; then
+    echo "   Proxy running on port ${PROXY_PORT} (PID $PROXY_PID)"
+    echo "   Logs: /tmp/openclaw-proxy.log"
+  else
+    echo "   WARNING: Proxy failed to start. Check /tmp/openclaw-proxy.log"
+  fi
+else
+  echo ""
+  echo "5. Could not find openclaw-session-proxy.js — skipping proxy start."
+  echo "   Start manually: ./start-session-proxy.sh"
+fi
+
 echo ""
-echo "Done. Round-robin is now installed."
+echo "Done. Round-robin is now installed and active."
 echo ""
-echo "How it works:"
-echo "  - The session proxy auto-loads the module on startup."
-echo "  - Every prompt rotates through the model list."
-echo "  - Use /model <id> to pin a model, /round-robin to resume rotation."
+echo "  Open: http://127.0.0.1:${PROXY_PORT}/new"
+echo "  Models rotate on every prompt."
+echo "  Use /model <id> to pin a model, /round-robin to resume rotation."
 echo ""
-echo "To start:"
-echo "  ./start-session-proxy.sh"
-echo "  Open http://127.0.0.1:3010/new"
-echo ""
-echo "To edit models:"
-echo "  Edit ${CONFIG_FILE}"
-echo "  Or ask the agent: 'Edit round-robin'"
-echo ""
-echo "To disable:"
-echo "  ROUND_ROBIN_MODELS=off ./start-session-proxy.sh"
-echo ""
-echo "To uninstall:"
-echo "  rm -rf ${SKILLS_DIR} ${MODULES_DIR}/model-round-robin.js ${MODULES_DIR}/model-round-robin-proxy.js ${CONFIG_FILE}"
+echo "  Edit models: ${CONFIG_FILE}"
+echo "  Disable:     ROUND_ROBIN_MODELS=off ./start-session-proxy.sh"
+echo "  Uninstall:   rm -rf ${SKILLS_DIR} ${MODULES_DIR}/model-round-robin.js ${MODULES_DIR}/model-round-robin-proxy.js ${CONFIG_FILE}"

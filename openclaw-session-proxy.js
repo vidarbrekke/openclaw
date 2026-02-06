@@ -107,7 +107,7 @@ const server = http.createServer((req, res) => {
     const sessionKey = generateSessionKey();
     const params = new URLSearchParams({ session: sessionKey });
     if (GATEWAY_TOKEN) params.set("token", GATEWAY_TOKEN);
-    const targetPath = `/s/${encodeURIComponent(sessionKey)}?${params.toString()}`;
+    const targetPath = `/s/${encodeURIComponent(sessionKey)}/?${params.toString()}`;
     const cookiePath = `/s/${encodeURIComponent(sessionKey)}`;
     res.writeHead(302, {
       Location: targetPath,
