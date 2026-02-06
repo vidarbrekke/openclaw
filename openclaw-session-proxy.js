@@ -13,9 +13,28 @@ import http from "http";
 import https from "https";
 import fs from "fs";
 import path from "path";
-import { URL } from "url";
+import { URL, pathToFileURL } from "url";
 import crypto from "crypto";
-import { createRoundRobinState, transformChatBody, processRoundRobinCommands, isRoundRobinEnabled } from "./model-round-robin.js";
+
+// Dynamic import: try multiple locations for the round-robin module.
+// Order: local dev (skills/round-robin/) → repo root (compat) → global install (~/.openclaw/modules/)
+let rr = null;
+const __dirname = path.dirname(new URL(import.meta.url).pathname);
+const home = process.env.HOME || process.env.USERPROFILE || "";
+const rrPaths = [
+  path.join(__dirname, "skills", "round-robin", "model-round-robin.js"),
+  path.join(__dirname, "model-round-robin.js"),
+  path.join(home, ".openclaw", "modules", "model-round-robin.js"),
+];
+for (const p of rrPaths) {
+  try {
+    if (fs.existsSync(p)) {
+      rr = await import(pathToFileURL(p).href);
+      break;
+    }
+  } catch (_) {}
+}
+const { createRoundRobinState, transformChatBody, processRoundRobinCommands, isRoundRobinEnabled } = rr || {};
 
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:18789";
 const PROXY_PORT = Number(process.env.PROXY_PORT || 3010);
@@ -67,7 +86,8 @@ function isChatCompletions(method, path) {
 }
 
 const roundRobinModels = process.env.ROUND_ROBIN_MODELS;
-const roundRobinState = createRoundRobinState(roundRobinModels);
+const roundRobinAvailable = !!(rr && createRoundRobinState);
+const roundRobinState = roundRobinAvailable ? createRoundRobinState(roundRobinModels) : null;
 
 // Per-session: roundRobinEnabled (default true when feature is on)
 const sessionRoundRobin = new Map();
@@ -128,7 +148,7 @@ const server = http.createServer((req, res) => {
     console.log(`[proxy] ${req.method} ${targetPath} -> session: ${sessionKey}`);
   }
 
-  const useRoundRobin = isRoundRobinEnabled(roundRobinModels) && isChatCompletions(req.method, targetPath);
+  const useRoundRobin = roundRobinAvailable && isRoundRobinEnabled(roundRobinModels) && isChatCompletions(req.method, targetPath);
   if (useRoundRobin) {
     proxyHeaders["content-length"] = undefined;
   }
@@ -262,9 +282,11 @@ server.listen(PROXY_PORT, "127.0.0.1", () => {
   console.log(`  Proxying: ${GATEWAY_URL}`);
   console.log(`  Listening: http://127.0.0.1:${PROXY_PORT}`);
   console.log(`  Gateway token: ${GATEWAY_TOKEN ? "auto-injected (from openclaw.json)" : "not found (paste in Control UI settings)"}`);
-  if (roundRobinState?.getModels) {
+  if (roundRobinAvailable && roundRobinState?.getModels) {
     const models = roundRobinState.getModels();
-    if (models?.length) console.log(`  Round-robin: ${models.length} models`);
+    if (models?.length) console.log(`  Round-robin: ${models.length} models (active)`);
+  } else {
+    console.log(`  Round-robin: not installed (install with skills/round-robin/install.sh)`);
   }
   console.log(``);
   console.log(`Open http://127.0.0.1:${PROXY_PORT}/new to start a new session`);

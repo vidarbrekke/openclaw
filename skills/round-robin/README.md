@@ -1,35 +1,51 @@
-# Round-Robin Model Selection Skill
+# Round-Robin Model Rotation
 
-Manage which models rotate in the OpenClaw round-robin proxy. List models, update the list via conversation, and understand `/round-robin` and `/model` commands.
+Self-contained package that rotates LLM models per prompt. Every query goes to the next model in a configurable list, giving you diversity of approach.
+
+## What's in this package
+
+| File | Purpose |
+|---|---|
+| `model-round-robin.js` | Core rotation logic (loaded by the session proxy) |
+| `model-round-robin-proxy.js` | Standalone proxy (use without session proxy) |
+| `SKILL.md` | Agent instructions for listing/editing models |
+| `install.sh` | Installer (copies module + skill + config) |
+| `README.md` | This file |
+| `USAGE.md` | Quick reference for end users |
 
 ## Install
 
-From the clawd repo root:
 ```bash
-./install-round-robin.sh
+bash skills/round-robin/install.sh
 ```
-This copies the skill to `~/.openclaw/skills/round-robin/` and creates `~/.openclaw/round-robin-models.json` if missing.
 
-Or manually:
-1. Copy the skill: `cp -r skills/round-robin ~/.openclaw/skills/`
+This installs three things:
+1. **Agent skill** → `~/.openclaw/skills/round-robin/` (so the agent can manage models)
+2. **Core module** → `~/.openclaw/modules/model-round-robin.js` (loaded by the proxy at runtime)
+3. **Config file** → `~/.openclaw/round-robin-models.json` (editable model list)
 
-2. Start the session proxy (round-robin is on by default):
-   ```bash
-   ./start-session-proxy.sh
-   ```
-   Or create a custom config file (the skill can do this for you):
-   ```bash
-   echo '{"models": ["openrouter/qwen/qwen3-coder-plus", "openrouter/moonshotai/kimi-k2.5", "openrouter/google/gemini-2.5-flash", "openrouter/anthropic/claude-haiku-4.5", "openrouter/openai/gpt-5.2-codex"]}' > ~/.openclaw/round-robin-models.json
-   ```
+## How it works
+
+- The session proxy dynamically loads `model-round-robin.js` on startup
+- Each chat completion request gets routed to the next model in the list
+- If the module isn't installed, the proxy runs normally (no round-robin)
 
 ## Usage
 
-- **List models:** "What models are in round-robin?" or "/round-robin"
-- **Edit models:** "Edit round-robin" or "Change round-robin to modelA, modelB, modelC"
-- **Re-enable round-robin:** Type `/round-robin` in a message (after using `/model` to pin a model)
+- **Start:** `./start-session-proxy.sh` → open `http://127.0.0.1:3010/new`
+- **Pin a model:** Type `/model openrouter/x/y` in your message
+- **Resume rotation:** Type `/round-robin`
+- **Edit models:** Edit `~/.openclaw/round-robin-models.json` or ask the agent "Edit round-robin"
+- **Disable:** `ROUND_ROBIN_MODELS=off ./start-session-proxy.sh`
 
-## Config File
+## Config file
 
-- Path: `~/.openclaw/round-robin-models.json`
-- Format: `{"models": ["model-id-1", "model-id-2", ...]}`
+- **Path:** `~/.openclaw/round-robin-models.json`
+- **Format:** `{"models": ["model-id-1", "model-id-2", ...]}`
 - Changes take effect immediately (no proxy restart)
+
+## Uninstall
+
+```bash
+rm -rf ~/.openclaw/skills/round-robin ~/.openclaw/modules/model-round-robin*.js ~/.openclaw/round-robin-models.json
+```
