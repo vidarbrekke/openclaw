@@ -18,7 +18,7 @@ echo ""
 echo "1. Agent skill → ${SKILLS_DIR}/"
 mkdir -p "$SKILLS_DIR"
 set +e
-for f in SKILL.md README.md USAGE.md install.sh model-round-robin.js model-round-robin-proxy.js; do
+for f in SKILL.md README.md install.sh model-round-robin.js model-round-robin-proxy.js; do
   [ -f "$SKILL_DIR/$f" ] && cp "$SKILL_DIR/$f" "$SKILLS_DIR/" 2>/dev/null
 done
 set -e
