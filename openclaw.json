@@ -1,0 +1,46 @@
+{
+  "skills": {
+    "allowlist": [
+      "agent-browser",
+      "agent-browser-2-0.1.0",
+      "browser",
+      "playwright-mcp",
+      "brave-search",
+      "conventional-commits",
+      "council",
+      "create-plan",
+      "humanizer",
+      "marketing-skills",
+      "moltbot-best-practices",
+      "pdf-processing",
+      "screenshot-capture",
+      "spreadsheet-processing",
+      "telegram",
+      "url-text-scraper",
+      "internal-ops",
+      "local-ops",
+      "round-robin"
+    ]
+  },
+  "tools": {
+    "default_api": {
+      "excluded": [
+        "cron",
+        "nodes",
+        "message",
+        "tts",
+        "gateway",
+        "agents_list",
+        "sessions_list",
+        "sessions_history",
+        "sessions_send",
+        "sessions_spawn",
+        "session_status",
+        "web_search",
+        "web_fetch",
+        "memory_search",
+        "memory_get"
+      ]
+    }
+  }
+}
