@@ -23,24 +23,12 @@
     ]
   },
   "tools": {
-    "default_api": {
-      "excluded": [
-        "cron",
-        "nodes",
-        "message",
-        "tts",
-        "gateway",
-        "agents_list",
-        "sessions_list",
-        "sessions_history",
-        "sessions_send",
-        "sessions_spawn",
-        "session_status",
-        "web_search",
-        "web_fetch",
-        "memory_search",
-        "memory_get"
-      ]
-    }
+    "allow": [
+      "read",
+      "write",
+      "edit",
+      "exec",
+      "process"
+    ]
   }
 }
