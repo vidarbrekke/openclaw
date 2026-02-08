@@ -18,11 +18,12 @@ echo ""
 echo "1. Agent skill → ${SKILLS_DIR}/"
 mkdir -p "$SKILLS_DIR"
 set +e
-for f in SKILL.md README.md install.sh model-round-robin.js model-round-robin-proxy.js; do
+for f in SKILL.md README.md install.sh cleanup-proxy-sessions.sh model-round-robin.js model-round-robin-proxy.js; do
   [ -f "$SKILL_DIR/$f" ] && cp "$SKILL_DIR/$f" "$SKILLS_DIR/" 2>/dev/null
 done
 set -e
 chmod +x "$SKILLS_DIR/install.sh"
+chmod +x "$SKILLS_DIR/cleanup-proxy-sessions.sh"
 
 # 2. Install the core module (proxy loads this at runtime)
 echo "2. Core module → ${MODULES_DIR}/model-round-robin.js"
@@ -92,4 +93,8 @@ echo "  Use /model <id> to pin a model, /round-robin to resume rotation."
 echo ""
 echo "  Edit models: ${CONFIG_FILE}"
 echo "  Disable:     ROUND_ROBIN_MODELS=off ./start-session-proxy.sh"
+echo ""
+echo "  Stale proxy sessions: run ${SKILLS_DIR}/cleanup-proxy-sessions.sh"
+echo "  Smart cleanup (Ollama): SMART=1 ${SKILLS_DIR}/cleanup-proxy-sessions.sh"
+echo "  Cron (every 3h):        0 */3 * * * ${SKILLS_DIR}/cleanup-proxy-sessions.sh"
 echo "  Uninstall:   rm -rf ${SKILLS_DIR} ${MODULES_DIR}/model-round-robin.js ${MODULES_DIR}/model-round-robin-proxy.js ${CONFIG_FILE}"

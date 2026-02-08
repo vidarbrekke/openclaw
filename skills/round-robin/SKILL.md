@@ -48,6 +48,27 @@ On "edit round-robin" or new list: write JSON to config path. Ensure `~/.opencla
 
 `http://127.0.0.1:3010/round-robin/status` — JSON with enabled, models, per-session index.
 
+### 5. Clean up stale proxy sessions
+
+Proxy creates a session per `/new` tab; they accumulate. Targets only `agent:main:proxy:*` (leaves native sessions alone).
+
+```bash
+# Time-based (default): delete sessions older than 3h
+~/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh
+
+# Smart mode: Ollama evaluates each session (zero external tokens)
+SMART=1 ~/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh
+
+# Preview without acting
+DRY_RUN=1 ~/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh
+```
+
+Env: `STALE_MS` (default 10800000 = 3h), `SESSION_PREFIX` (default agent:main:proxy:), `SMART` (0=time, 1=ollama), `DRY_RUN` (1=preview), `OLLAMA_MODEL` (default: auto-pick most recently updated Ollama model).
+
+Smart mode calls Ollama directly and auto-picks the most recently updated local model. You can override with `OLLAMA_MODEL=<ollama-model-name>`.
+
+Cron (every 3h): `0 */3 * * * ~/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh`
+
 ## Commands (in chat)
 
 - `/round-robin` — Restart proxy if down; re-enable rotation; list models
