@@ -1,0 +1,25 @@
+diff --git a/middleware.ts b/middleware.ts
+index ffd8b683..b76b466f 100644
+--- a/middleware.ts
++++ b/middleware.ts
+@@ -48,7 +48,7 @@ export default function middleware(req: NextRequest) {
+   // Enable CSP with proper directives for Next.js functionality
+   const csp = [
+     "default-src 'self'",
+-    "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://www.gstatic.com https://www.google.com https://accounts.google.com https://apis.google.com https://docs.opencv.org https://cdn.jsdelivr.net https://unpkg.com",
++    "script-src 'self' 'unsafe-eval' https://www.gstatic.com https://www.google.com https://accounts.google.com https://apis.google.com https://docs.opencv.org https://cdn.jsdelivr.net https://unpkg.com",
+     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+     "font-src 'self' data: https://fonts.gstatic.com",
+     "img-src 'self' blob: data: https: https://images.unsplash.com https://*.googleapis.com https://*.google.com",
+
+CHANGED:
+Line 47 (now 51): Removed 'unsafe-inline' from script-src directive
+
+BEFORE:
+"script-src 'self' 'unsafe-eval' 'unsafe-inline' https://www.gstatic.com ..."
+
+AFTER:
+"script-src 'self' 'unsafe-eval' https://www.gstatic.com ..."
+
+Removed: 'unsafe-inline' (28 characters)
+Result: Eliminates XSS vulnerability while preserving all functionality

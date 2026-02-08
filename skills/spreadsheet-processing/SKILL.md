@@ -20,6 +20,15 @@ description: >
 
 Primary tool: `exceljs` - full-featured Excel library for Node.js
 
+### Installation
+
+**Quick setup (recommended):**
+```bash
+cd /path/to/openclaw/skills/spreadsheet-processing
+./setup.sh
+```
+
+**Manual install:**
 ```bash
 npm install exceljs
 ```

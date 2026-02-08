@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "moltbot-best-practices": "^1.1.0",
+    "moltbot-security": "^1.0.0",
+    "openai": "^6.17.0",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^2.4.5",
+    "pdfkit": "^0.17.2"
+  }
+}

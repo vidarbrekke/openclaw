@@ -38,17 +38,25 @@ description: >
 ## Browser Automation Approach
 
 ### Browser/Page Screenshots
-```bash
-# Add --browser=chromium to ensure Chromium is used
-npx playwright screenshot https://example.com --path output.png --browser=chromium
 
-# Or with full-page capture
-npx playwright screenshot https://example.com --full-page --path output.png --browser=chromium
+**Use the `browser` tool** (preferred - follows routing policy):
+- Default to agent-browser for screenshots/PDF/video
+- Only falls back to Playwright MCP on failures
+
+```bash
+# Browser automation via OpenClaw tools (respects router policy)
+# The browser skill will route to appropriate backend
+```
+
+**Direct Playwright (fallback only)**:
+```bash
+# If browser tool unavailable, use npx playwright directly
+npx playwright screenshot https://example.com --path output.png --browser=chromium --full-page
 ```
 
 ### Element Screenshots
 Use browser automation tools to:
-1. Navigate to the target page
+1. Navigate to the target page with `browser` tool
 2. Select the element by selector
 3. Capture screenshot of that element only
 

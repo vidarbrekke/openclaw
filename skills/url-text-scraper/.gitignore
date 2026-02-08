@@ -1,0 +1,8 @@
+# Environment variables (may contain secrets)
+.env
+.venv/
+__pycache__/
+*.pyc
+out_*
+*.zip
+.DS_Store
