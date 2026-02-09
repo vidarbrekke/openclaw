@@ -221,7 +221,25 @@ Test: Re-run build
 - **Discord links:** Wrap multiple links in `<>` to suppress embeds: `<https://example.com>`
 - **WhatsApp:** No headers — use **bold** or CAPS for emphasis
 
-## Routing Rules — Local vs Cloud
+## Housekeeping & Orchestration Tasks → Local
+
+**Simple operational tasks use `local` (zero external tokens):**
+
+- Slash commands: `/round-robin`, `/status`, `/bash`, etc.
+- Status checks: gateway status, agent list, session list
+- Config reads: reading/displaying config files
+- Simple file operations: listing, reading workspace files
+- Orchestration: session cleanup, cron management (non-critical)
+
+**Exception - Use CLOUD for:**
+- Complex decisions requiring reasoning
+- Writing critical configs
+- Security-sensitive operations
+- User-facing final responses needing quality
+
+**Rule:** Housekeeping = local by default. Quality/decision = cloud.
+
+## Routing Rules — Local vs Cloud (Coding Tasks)
 ```
 # ROUTING SPEC
 # Constants (tunable)
