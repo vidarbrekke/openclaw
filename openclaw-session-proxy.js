@@ -35,7 +35,7 @@ for (const p of rrPaths) {
     }
   } catch (_) {}
 }
-const { createRoundRobinState, transformChatBody, processRoundRobinCommands, isRoundRobinEnabled } = rr || {};
+const { createRoundRobinState, transformChatBody, processRoundRobinCommands, isRoundRobinEnabled, TURNS_PER_MODEL = 2 } = rr || {};
 
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:18789";
 const PROXY_PORT = Number(process.env.PROXY_PORT || 3010);
@@ -242,14 +242,15 @@ const server = http.createServer((req, res) => {
       const setSession = (s) => setSessionRoundRobin(sk, s);
       const { applyRoundRobin } = processRoundRobinCommands(parsed, getSession, setSession);
       const modifiedBody = Buffer.from(JSON.stringify(parsed));
-      // Per-session rotation index (was global - all sessions shared one index)
+      // Per-session rotation index and turns-used (each model runs TURNS_PER_MODEL turns before advancing)
       const sessionState = getSession();
       const perSessionState = {
         index: sessionState.index ?? 0,
+        turnsUsed: sessionState.turnsUsed ?? 0,
         getModels: roundRobinState.getModels,
       };
       const { body, model } = transformChatBody(perSessionState, modifiedBody, { applyRoundRobin });
-      setSession({ ...sessionState, index: perSessionState.index });
+      setSession({ ...sessionState, index: perSessionState.index, turnsUsed: perSessionState.turnsUsed });
       proxyReq.setHeader("Content-Length", body.length);
       proxyReq.write(body);
       proxyReq.end();
@@ -288,10 +289,13 @@ function applyRoundRobinModelOverrideToStore(store, sessionKey) {
   if (!models.length) return null;
 
   const idx = session.index ?? 0;
+  const turnsUsed = session.turnsUsed ?? 0;
   const fullModel = models[idx % models.length];
+  const advance = turnsUsed >= (TURNS_PER_MODEL - 1);
   SESSION_ROTATION_STATE.set(sk, {
     ...session,
-    index: (idx + 1) % models.length,
+    index: advance ? (idx + 1) % models.length : idx,
+    turnsUsed: advance ? 0 : turnsUsed + 1,
     lastAppliedModel: fullModel,
   });
 

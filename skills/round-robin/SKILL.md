@@ -7,7 +7,7 @@ description: >
 
 # Round-Robin Model Selection
 
-Round-robin rotates the model on every turn (GUI chat, cron, background tasks). Each session has its own rotation index.
+Round-robin rotates the model every two turns (GUI chat, cron, background tasks). Each model runs for two consecutive turns before advancing to the next. Each session has its own rotation index.
 
 ## Activation (automatic)
 

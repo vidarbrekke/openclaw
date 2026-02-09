@@ -1,9 +1,13 @@
 /**
  * Round-robin model selector for OpenClaw chat completion requests.
  * Models are resolved from: config file > env ROUND_ROBIN_MODELS > defaults.
+ * Each model runs for TURNS_PER_MODEL consecutive turns before advancing.
  */
 
 import fs from "fs";
+
+/** Number of consecutive turns each model is used before rotating to the next. */
+export const TURNS_PER_MODEL = 2;
 import path from "path";
 
 export const DEFAULT_MODELS = [
@@ -132,8 +136,15 @@ export function transformChatBody(state, rawBody, opts = {}) {
 
   let model;
   if (applyRoundRobin) {
-    model = models[state.index % models.length];
-    state.index = (state.index + 1) % models.length;
+    const idx = state.index ?? 0;
+    const turnsUsed = state.turnsUsed ?? 0;
+    model = models[idx % models.length];
+    if (turnsUsed >= TURNS_PER_MODEL - 1) {
+      state.index = (idx + 1) % models.length;
+      state.turnsUsed = 0;
+    } else {
+      state.turnsUsed = (turnsUsed + 1) | 0;
+    }
   } else {
     model = parsed.model;
   }

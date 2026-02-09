@@ -52,10 +52,11 @@ const server = http.createServer((req, res) => {
       const sessionState = getSession();
       const perSessionState = {
         index: sessionState.index ?? 0,
+        turnsUsed: sessionState.turnsUsed ?? 0,
         getModels: roundRobinState.getModels,
       };
       const { body, model } = transformChatBody(perSessionState, modifiedBody, { applyRoundRobin });
-      setSession({ ...sessionState, index: perSessionState.index });
+      setSession({ ...sessionState, index: perSessionState.index, turnsUsed: perSessionState.turnsUsed });
       const headers = { ...req.headers };
       headers.host = gatewayUrl.host;
       headers["content-length"] = body.length;
