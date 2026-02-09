@@ -108,7 +108,7 @@ const server = http.createServer((req, res) => {
     const sessions = {};
     for (const [key, value] of SESSION_ROTATION_STATE.entries()) {
       sessions[key] = {
-        roundRobinEnabled: value.roundRobinEnabled !== false,
+        roundRobinEnabled: value.roundRobinEnabled === true,
         index: value.index ?? 0,
         lastAppliedModel: value.lastAppliedModel ?? null,
       };
@@ -272,7 +272,7 @@ const SESSION_UPDATED_AT = new Map();
 let sessionsWriteInFlight = false;
 
 function getRotationState(sk) {
-  const existing = SESSION_ROTATION_STATE.get(sk) ?? { roundRobinEnabled: true };
+  const existing = SESSION_ROTATION_STATE.get(sk) ?? { roundRobinEnabled: false };
   if (!SESSION_ROTATION_STATE.has(sk)) SESSION_ROTATION_STATE.set(sk, existing);
   return existing;
 }

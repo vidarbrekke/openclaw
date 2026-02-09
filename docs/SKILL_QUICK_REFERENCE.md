@@ -8,7 +8,7 @@ For agents: when to use each skill and key commands.
 
 **Use:** Rotate model per turn; list/edit round-robin models.
 
-- **Activation:** Automatic when proxy on port 3010. Open `http://127.0.0.1:3010/new` — no command needed.
+- **Activation:** Opt-in. Open `http://127.0.0.1:3010/new`, then type `/round-robin` in chat.
 - **Config:** `~/.openclaw/round-robin-models.json` → `{"models": ["id1","id2",...]}`
 - **Status:** `http://127.0.0.1:3010/round-robin/status`
 - **Commands:** `/round-robin` (restart/re-enable), `/round-robin edit` (change list), `/model <id>` (pin, disables rotation)

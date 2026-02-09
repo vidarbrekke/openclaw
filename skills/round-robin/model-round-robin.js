@@ -54,7 +54,7 @@ export function resolveModels(env, configPath) {
 }
 
 /**
- * Round-robin is always enabled by default.
+ * Round-robin is opt-in; only sessions where the user typed /round-robin use rotation.
  * Disable explicitly with ROUND_ROBIN_MODELS=off.
  */
 export function isRoundRobinEnabled(env) {
@@ -95,7 +95,7 @@ function getMessageText(msg) {
  * @returns {{ applyRoundRobin: boolean }}
  */
 export function processRoundRobinCommands(parsed, getSession, setSession) {
-  let applyRoundRobin = (getSession() ?? { roundRobinEnabled: true }).roundRobinEnabled;
+  let applyRoundRobin = (getSession() ?? { roundRobinEnabled: false }).roundRobinEnabled;
   if (!Array.isArray(parsed?.messages)) return { applyRoundRobin };
 
   for (let i = parsed.messages.length - 1; i >= 0; i--) {

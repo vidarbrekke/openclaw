@@ -7,15 +7,15 @@ description: >
 
 # Round-Robin Model Selection
 
-Round-robin rotates the model every two turns (GUI chat, cron, background tasks). Each model runs for two consecutive turns before advancing to the next. Each session has its own rotation index.
+Round-robin rotates the model every two turns (GUI chat, cron, background tasks). **Only sessions where the user has typed `/round-robin` use rotation**; new sessions use the default model until enabled. Each model runs for two consecutive turns before advancing to the next.
 
-## Activation (automatic)
+## Activation (opt-in)
 
-**Round-robin is ON by default when using the proxy.** Open `http://127.0.0.1:3010/new` — no command needed.
+**Round-robin is opt-in.** Open `http://127.0.0.1:3010/new`, then type `/round-robin` in chat to enable rotation for that session.
 
 | Action | When | Command |
 |--------|------|---------|
-| Use round-robin | Always, when proxy is used | None — automatic |
+| Use round-robin | After typing `/round-robin` in chat | `/round-robin` |
 | Restart proxy | Proxy stopped (e.g. after reboot) | `/round-robin` |
 | Re-enable rotation | After pinning with `/model` | `/round-robin` |
 | Pin a model | Disable rotation for session | `/model openrouter/x/y` |

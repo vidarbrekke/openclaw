@@ -23,7 +23,7 @@ const roundRobinState = createRoundRobinState(process.env.ROUND_ROBIN_MODELS);
 
 const sessionRoundRobin = new Map();
 function getSessionRoundRobin(sk) {
-  return sessionRoundRobin.get(sk) ?? { roundRobinEnabled: true };
+  return sessionRoundRobin.get(sk) ?? { roundRobinEnabled: false };
 }
 function setSessionRoundRobin(sk, s) {
   sessionRoundRobin.set(sk, s);
