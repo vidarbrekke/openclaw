@@ -12,6 +12,9 @@ IMPORT_LOCAL_GGUF="${IMPORT_LOCAL_GGUF:-auto}"  # auto|yes|no
 IMPORT_MODEL_NAME="${IMPORT_MODEL_NAME:-embeddinggemma-local}"
 NON_INTERACTIVE=0
 SKIP_RESTART=0
+INSTALL_WATCHDOG=0
+WATCHDOG_INTERVAL=60
+REINDEX_MEMORY="auto" # auto|yes|no
 CONFIG_PATH="${OPENCLAW_CONFIG_PATH:-${OPENCLAW_DIR}/openclaw.json}"
 
 usage() {
@@ -32,6 +35,10 @@ Options:
   --openclaw-config <path>    OpenClaw config path (default: ~/.openclaw/openclaw.json)
   --non-interactive           do not prompt; use supplied/default values
   --skip-restart              do not restart OpenClaw gateway
+  --install-watchdog          install drift auto-heal watchdog via launchd (macOS)
+  --watchdog-interval <sec>   watchdog check interval in seconds (default: 60)
+  --reindex-memory <mode>     auto | yes | no (default: auto)
+                              auto: reindex only if embedding fingerprint changed
   --help                      show help
 EOF
 }
@@ -44,6 +51,9 @@ while [ $# -gt 0 ]; do
     --openclaw-config) CONFIG_PATH="$2"; shift 2 ;;
     --non-interactive) NON_INTERACTIVE=1; shift ;;
     --skip-restart) SKIP_RESTART=1; shift ;;
+    --install-watchdog) INSTALL_WATCHDOG=1; shift ;;
+    --watchdog-interval) WATCHDOG_INTERVAL="$2"; shift 2 ;;
+    --reindex-memory) REINDEX_MEMORY="$2"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
@@ -69,6 +79,13 @@ validate_import_mode() {
   case "$1" in
     auto|yes|no) return 0 ;;
     *) echo "ERROR: invalid import mode '$1' (expected auto|yes|no)"; exit 1 ;;
+  esac
+}
+
+validate_reindex_mode() {
+  case "$1" in
+    auto|yes|no) return 0 ;;
+    *) echo "ERROR: invalid reindex mode '$1' (expected auto|yes|no)"; exit 1 ;;
   esac
 }
 
@@ -199,6 +216,7 @@ fi
 
 validate_model "$MODEL"
 validate_import_mode "$IMPORT_LOCAL_GGUF"
+validate_reindex_mode "$REINDEX_MEMORY"
 
 if ! ollama_running; then
   echo "ERROR: Ollama is not reachable at http://127.0.0.1:11434"
@@ -268,9 +286,21 @@ echo ""
 echo "1. Skill files -> ${SKILLS_DIR}/"
 mkdir -p "$SKILLS_DIR"
 for f in SKILL.md README.md install.sh verify.sh; do
-  [ -f "${SKILL_DIR}/${f}" ] && cp "${SKILL_DIR}/${f}" "${SKILLS_DIR}/"
+  if [ -f "${SKILL_DIR}/${f}" ]; then
+    # Avoid copying a file onto itself when running from installed skill path.
+    if [ "${SKILL_DIR}/${f}" != "${SKILLS_DIR}/${f}" ]; then
+      cp "${SKILL_DIR}/${f}" "${SKILLS_DIR}/"
+    fi
+  fi
 done
-chmod +x "${SKILLS_DIR}/install.sh" "${SKILLS_DIR}/verify.sh" 2>/dev/null || true
+for f in enforce.sh watchdog.sh; do
+  if [ -f "${SKILL_DIR}/${f}" ]; then
+    if [ "${SKILL_DIR}/${f}" != "${SKILLS_DIR}/${f}" ]; then
+      cp "${SKILL_DIR}/${f}" "${SKILLS_DIR}/"
+    fi
+  fi
+done
+chmod +x "${SKILLS_DIR}/install.sh" "${SKILLS_DIR}/verify.sh" "${SKILLS_DIR}/enforce.sh" "${SKILLS_DIR}/watchdog.sh" 2>/dev/null || true
 
 # ── Config backup ────────────────────────────────────────────────────────────
 
@@ -284,31 +314,28 @@ else
   echo "2. Config created -> ${CONFIG_PATH}"
 fi
 
-# ── Update config (surgical: only touch memorySearch keys we own) ────────────
+# Capture pre-change embedding fingerprint to decide if reindex is needed.
+PRE_MS="$(node -e '
+const fs=require("fs");
+const p=process.argv[1];
+let cfg={};
+try { cfg=JSON.parse(fs.readFileSync(p,"utf8")); } catch (_) {}
+const ms=cfg?.agents?.defaults?.memorySearch || {};
+const fp={
+  provider: ms.provider || "",
+  model: ms.model || "",
+  baseUrl: ms?.remote?.baseUrl || "",
+  apiKey: ms?.remote?.apiKey || "",
+};
+process.stdout.write(JSON.stringify(fp));
+' "$CONFIG_PATH")"
 
-export CONFIG_PATH MODEL_TO_USE_CANON
-node <<'NODEOF'
-const fs = require("fs");
-const path = process.env.CONFIG_PATH;
-const model = process.env.MODEL_TO_USE_CANON;
-let cfg = {};
-try { cfg = JSON.parse(fs.readFileSync(path, "utf8")); } catch (_) { cfg = {}; }
+# ── Enforce config (single source of truth) ───────────────────────────────────
 
-cfg.agents = cfg.agents || {};
-cfg.agents.defaults = cfg.agents.defaults || {};
-cfg.agents.defaults.memorySearch = cfg.agents.defaults.memorySearch || {};
-
-// Only set the keys this skill owns
-cfg.agents.defaults.memorySearch.provider = "openai";
-cfg.agents.defaults.memorySearch.model = model;
-
-// Preserve any existing remote fields; only set baseUrl and apiKey
-cfg.agents.defaults.memorySearch.remote = cfg.agents.defaults.memorySearch.remote || {};
-cfg.agents.defaults.memorySearch.remote.baseUrl = "http://127.0.0.1:11434/v1/";
-cfg.agents.defaults.memorySearch.remote.apiKey = "ollama";
-
-fs.writeFileSync(path, JSON.stringify(cfg, null, 2));
-NODEOF
+"${SKILLS_DIR}/enforce.sh" \
+  --model "${MODEL_TO_USE_CANON}" \
+  --openclaw-config "${CONFIG_PATH}" \
+  --base-url "http://127.0.0.1:11434/v1/" >/dev/null
 
 # ── Post-write sanity check ─────────────────────────────────────────────────
 
@@ -336,6 +363,22 @@ try {
 ')"
 echo "$SANITY"
 
+if [ "$INSTALL_WATCHDOG" -eq 1 ]; then
+  echo ""
+  echo "   Installing drift auto-heal watchdog..."
+  if [ "$(uname)" = "Darwin" ]; then
+    "${SKILLS_DIR}/watchdog.sh" \
+      --install-launchd \
+      --model "${MODEL_TO_USE_CANON}" \
+      --openclaw-config "${CONFIG_PATH}" \
+      --interval-sec "${WATCHDOG_INTERVAL}" >/dev/null
+    echo "   Watchdog installed (launchd, ${WATCHDOG_INTERVAL}s interval)."
+  else
+    echo "   WARNING: --install-watchdog currently supports macOS launchd only."
+    echo "   Run watchdog manually: ${SKILLS_DIR}/watchdog.sh --once --model ${MODEL_TO_USE_CANON}"
+  fi
+fi
+
 # ── Gateway restart ──────────────────────────────────────────────────────────
 
 if [ "$SKIP_RESTART" -eq 1 ]; then
@@ -357,10 +400,85 @@ else
   echo "   WARNING: Verification failed. Check Ollama model and gateway logs."
 fi
 
+# ── Optional memory reindex ──────────────────────────────────────────────────
+
+POST_MS="$(node -e '
+const fs=require("fs");
+const p=process.argv[1];
+let cfg={};
+try { cfg=JSON.parse(fs.readFileSync(p,"utf8")); } catch (_) {}
+const ms=cfg?.agents?.defaults?.memorySearch || {};
+const fp={
+  provider: ms.provider || "",
+  model: ms.model || "",
+  baseUrl: ms?.remote?.baseUrl || "",
+  apiKey: ms?.remote?.apiKey || "",
+};
+process.stdout.write(JSON.stringify(fp));
+' "$CONFIG_PATH")"
+
+NEEDS_REINDEX=1
+if [ "$PRE_MS" = "$POST_MS" ]; then
+  NEEDS_REINDEX=0
+fi
+
+RUN_REINDEX=0
+case "$REINDEX_MEMORY" in
+  yes) RUN_REINDEX=1 ;;
+  no) RUN_REINDEX=0 ;;
+  auto)
+    if [ "$NEEDS_REINDEX" -eq 1 ]; then
+      if [ "$NON_INTERACTIVE" -eq 1 ]; then
+        RUN_REINDEX=1
+      else
+        echo ""
+        echo "6. Embedding fingerprint changed."
+        printf "   Rebuild memory index now (recommended)? [Y/n]: "
+        read -r yn
+        case "${yn:-Y}" in
+          Y|y|yes|YES) RUN_REINDEX=1 ;;
+          *) RUN_REINDEX=0 ;;
+        esac
+      fi
+    else
+      RUN_REINDEX=0
+    fi
+    ;;
+esac
+
+if [ "$NEEDS_REINDEX" -eq 0 ]; then
+  echo ""
+  echo "6. Memory reindex not needed (embedding fingerprint unchanged)."
+elif [ "$RUN_REINDEX" -eq 1 ]; then
+  echo ""
+  echo "6. Rebuilding memory index..."
+  if command -v openclaw >/dev/null 2>&1; then
+    if openclaw memory index --force --verbose; then
+      echo "   Memory reindex completed."
+    else
+      echo "   WARNING: Memory reindex failed. Run manually:"
+      echo "     openclaw memory index --force --verbose"
+    fi
+  else
+    echo "   WARNING: openclaw CLI not found; cannot run reindex automatically."
+    echo "   Run manually on host with OpenClaw CLI:"
+    echo "     openclaw memory index --force --verbose"
+  fi
+else
+  echo ""
+  echo "6. Skipping memory reindex."
+  if [ "$NEEDS_REINDEX" -eq 1 ]; then
+    echo "   Recommended command:"
+    echo "     openclaw memory index --force --verbose"
+  fi
+fi
+
 echo ""
 echo "Done. OpenClaw memory embeddings now use Ollama."
 echo ""
 echo "  Model:   ${MODEL_TO_USE_CANON}"
 echo "  Config:  ${CONFIG_PATH}"
+echo "  Enforce: ${SKILLS_DIR}/enforce.sh"
+echo "  Guard:   ${SKILLS_DIR}/watchdog.sh"
 echo "  Verify:  ${SKILLS_DIR}/verify.sh"
 echo ""
