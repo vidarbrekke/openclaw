@@ -31,6 +31,13 @@ Modes:
   --install-launchd       install + load launchd job (macOS)
   --uninstall-launchd     unload + remove launchd job (macOS)
 
+Other OS guidance:
+  Linux: run --once via cron/systemd timer
+  Windows: not supported (bash script)
+
+Linux cron example (every 5 min):
+  */5 * * * * /bin/bash ~/.openclaw/skills/ollama-memory-embeddings/watchdog.sh --once --model embeddinggemma >/dev/null 2>&1
+
 Options:
   --model <id>              model to enforce (required for new installs)
   --base-url <url>          base URL to enforce (default: http://127.0.0.1:11434/v1/)
@@ -119,6 +126,10 @@ run_cycle() {
 install_launchd() {
   if [ "$(uname)" != "Darwin" ]; then
     echo "ERROR: --install-launchd is macOS only."
+    echo "Linux recommendation:"
+    echo "  Use cron or a systemd timer to run:"
+    echo "  /bin/bash ${SKILL_DIR}/watchdog.sh --once --model <model>"
+    echo "Windows: not supported (bash script)."
     exit 1
   fi
   require_cmd launchctl
@@ -168,6 +179,7 @@ EOF
 uninstall_launchd() {
   if [ "$(uname)" != "Darwin" ]; then
     echo "ERROR: --uninstall-launchd is macOS only."
+    echo "Windows: not supported (bash script)."
     exit 1
   fi
   require_cmd launchctl

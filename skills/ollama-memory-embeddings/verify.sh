@@ -62,9 +62,33 @@ if [ -z "$MODEL" ] || [ -z "$BASE_URL" ]; then
   MAP_OUTPUT="$(node -e '
 const fs = require("fs");
 const p = process.env.CONFIG_PATH;
+const CANDIDATES = [
+  ["agents","defaults","memorySearch"],
+  ["memorySearch"],
+  ["agents","memorySearch"],
+  ["agents","defaults","memory","search"],
+  ["memory","search"],
+];
+function getAt(obj, path) {
+  let cur = obj;
+  for (const k of path) {
+    if (!cur || typeof cur !== "object" || !(k in cur)) return undefined;
+    cur = cur[k];
+  }
+  return cur;
+}
+function resolveMs(cfg) {
+  const canonical = getAt(cfg, CANDIDATES[0]);
+  if (canonical && typeof canonical === "object" && !Array.isArray(canonical)) return canonical;
+  for (const p of CANDIDATES.slice(1)) {
+    const v = getAt(cfg, p);
+    if (v && typeof v === "object" && !Array.isArray(v)) return v;
+  }
+  return {};
+}
 let cfg = {};
 try { cfg = JSON.parse(fs.readFileSync(p, "utf8")); } catch (_) {}
-const ms = cfg?.agents?.defaults?.memorySearch || {};
+const ms = resolveMs(cfg);
 const model = ms.model || "";
 const base = (ms?.remote?.baseUrl || "http://127.0.0.1:11434/v1/").trim();
 console.log(model);
@@ -125,20 +149,29 @@ EOF
 HTTP_CODE=""
 RESP=""
 
-# Capture both HTTP status and body
-TMPFILE="$(mktemp)"
-HTTP_CODE="$(curl -sS -o "$TMPFILE" -w "%{http_code}" \
+# Capture HTTP status and response body without mixing stderr into status code.
+TMP_BODY="$(mktemp)"
+TMP_ERR="$(mktemp)"
+set +e
+HTTP_CODE="$(curl -sS -o "$TMP_BODY" -w "%{http_code}" \
   -H "Content-Type: application/json" \
   -d "$PAYLOAD" \
-  "$EMBED_URL" 2>&1)" || {
-    echo "  ERROR: curl failed to reach ${EMBED_URL}"
-    echo "  Is Ollama running? Check: curl http://127.0.0.1:11434/api/tags"
-    rm -f "$TMPFILE"
-    exit 1
-  }
+  "$EMBED_URL" 2>"$TMP_ERR")"
+CURL_STATUS=$?
+set -e
 
-RESP="$(cat "$TMPFILE")"
-rm -f "$TMPFILE"
+RESP="$(cat "$TMP_BODY")"
+CURL_ERR="$(cat "$TMP_ERR")"
+rm -f "$TMP_BODY" "$TMP_ERR"
+
+if [ "$CURL_STATUS" -ne 0 ]; then
+  echo "  ERROR: curl failed to reach ${EMBED_URL}"
+  echo "  Is Ollama running? Check: curl http://127.0.0.1:11434/api/tags"
+  if [ "$VERBOSE" -eq 1 ] && [ -n "$CURL_ERR" ]; then
+    echo "  curl error: ${CURL_ERR}"
+  fi
+  exit 1
+fi
 
 if [ "$HTTP_CODE" != "200" ]; then
   echo "  ERROR: embeddings endpoint returned HTTP ${HTTP_CODE}"

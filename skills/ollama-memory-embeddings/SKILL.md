@@ -163,4 +163,8 @@ ollama create my-model -f /path/to/Modelfile
 - If embedding model changes, rebuild/re-embed existing memory vectors to avoid
   retrieval mismatch across incompatible vector spaces.
 - With `--reindex-memory auto`, installer reindexes only when the effective
-  embedding fingerprint changed (`provider`, `model`, `baseUrl`, `apiKey`).
+  embedding fingerprint changed (`provider`, `model`, `baseUrl`, `apiKey presence`).
+- Drift checks require a non-empty apiKey but do not require a literal `"ollama"` value.
+- Config backups are created only when a write is needed.
+- Legacy schema fallback is supported: if `agents.defaults.memorySearch` is absent,
+  the enforcer reads known legacy paths and mirrors writes to preserve compatibility.

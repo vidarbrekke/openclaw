@@ -100,6 +100,12 @@ vector space. Rebuild/re-embed your memory index after model changes to avoid
 retrieval quality regressions.
 
 Installer behavior:
-- `--reindex-memory auto` (default): reindex only when embedding fingerprint changed (`provider`, `model`, `baseUrl`, `apiKey`).
+- `--reindex-memory auto` (default): reindex only when embedding fingerprint changed (`provider`, `model`, `baseUrl`, `apiKey presence`).
 - `--reindex-memory yes`: always run `openclaw memory index --force --verbose`.
 - `--reindex-memory no`: never reindex automatically.
+
+Notes:
+- `enforce.sh --check-only` treats apiKey drift as **missing apiKey** (empty), not strict equality to `"ollama"`.
+- Backups are created only when config changes are actually written.
+- Legacy config fallback supported: if canonical `agents.defaults.memorySearch` is missing,
+  scripts read known legacy paths and mirror updates for compatibility.

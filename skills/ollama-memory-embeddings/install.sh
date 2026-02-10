@@ -128,6 +128,33 @@ find_local_embedding_gguf() {
   return 1
 }
 
+gguf_matches_selected_model() {
+  local gguf="$1"
+  local model="$2"
+  case "$model" in
+    embeddinggemma) [[ "$gguf" == *embeddinggemma* ]] ;;
+    nomic-embed-text) [[ "$gguf" == *nomic-embed* ]] ;;
+    all-minilm) [[ "$gguf" == *all-minilm* ]] ;;
+    mxbai-embed-large) [[ "$gguf" == *mxbai-embed* ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+guess_model_from_gguf() {
+  local gguf="$1"
+  if [[ "$gguf" == *embeddinggemma* ]]; then
+    echo "embeddinggemma"
+  elif [[ "$gguf" == *nomic-embed* ]]; then
+    echo "nomic-embed-text"
+  elif [[ "$gguf" == *all-minilm* ]]; then
+    echo "all-minilm"
+  elif [[ "$gguf" == *mxbai-embed* ]]; then
+    echo "mxbai-embed-large"
+  else
+    echo "unknown"
+  fi
+}
+
 prompt_model_if_needed() {
   if [ "$NON_INTERACTIVE" -eq 1 ]; then
     return 0
@@ -230,15 +257,22 @@ validate_model "$MODEL"
 # ── GGUF detection and optional import ───────────────────────────────────────
 
 LOCAL_GGUF=""
+LOCAL_GGUF_MATCHES_MODEL=0
 if LOCAL_GGUF="$(find_local_embedding_gguf)"; then
   echo "Detected local embedding GGUF:"
   echo "  $LOCAL_GGUF"
+  if gguf_matches_selected_model "$LOCAL_GGUF" "$MODEL"; then
+    LOCAL_GGUF_MATCHES_MODEL=1
+  else
+    DETECTED_GGUF_MODEL="$(guess_model_from_gguf "$LOCAL_GGUF")"
+    echo "Local GGUF does not match selected model '${MODEL}' (detected: ${DETECTED_GGUF_MODEL}); skipping GGUF import prompt."
+  fi
 fi
 
 MODEL_TO_USE="$MODEL"
 WILL_IMPORT="no"
 
-if [ -n "$LOCAL_GGUF" ]; then
+if [ -n "$LOCAL_GGUF" ] && [ "$LOCAL_GGUF_MATCHES_MODEL" -eq 1 ]; then
   case "$IMPORT_LOCAL_GGUF" in
     yes) WILL_IMPORT="yes" ;;
     no) WILL_IMPORT="no" ;;
@@ -257,6 +291,8 @@ if [ -n "$LOCAL_GGUF" ]; then
       fi
       ;;
   esac
+elif [ -n "$LOCAL_GGUF" ] && [ "$IMPORT_LOCAL_GGUF" = "yes" ]; then
+  echo "WARNING: --import-local-gguf yes ignored because detected GGUF does not match selected model '${MODEL}'."
 fi
 
 if [ "$WILL_IMPORT" = "yes" ]; then
@@ -325,7 +361,7 @@ const fp={
   provider: ms.provider || "",
   model: ms.model || "",
   baseUrl: ms?.remote?.baseUrl || "",
-  apiKey: ms?.remote?.apiKey || "",
+  apiKeySet: !!(ms?.remote?.apiKey || ""),
 };
 process.stdout.write(JSON.stringify(fp));
 ' "$CONFIG_PATH")"
@@ -412,7 +448,7 @@ const fp={
   provider: ms.provider || "",
   model: ms.model || "",
   baseUrl: ms?.remote?.baseUrl || "",
-  apiKey: ms?.remote?.apiKey || "",
+  apiKeySet: !!(ms?.remote?.apiKey || ""),
 };
 process.stdout.write(JSON.stringify(fp));
 ' "$CONFIG_PATH")"
