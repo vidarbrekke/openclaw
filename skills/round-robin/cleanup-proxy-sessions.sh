@@ -1,16 +1,32 @@
 #!/usr/bin/env bash
-# Clean up stale proxy sessions (agent:main:proxy:*).
-# Only targets sessions created by the round-robin/session proxy.
+# Clean up stale OpenClaw sessions. Safe for non-interactive cron.
 # Marks as deleted (renames .jsonl → .jsonl.deleted.TIMESTAMP), removes from sessions.json.
 #
-# Two modes:
+# Modes:
+#   ALL=0  (default) — Only proxy sessions (agent:main:proxy:*)
+#   ALL=1             — All non-critical sessions (proxy, webchat, openai, etc.)
+#
+# Protected sessions (never deleted): agent:main:main
+#   - Heartbeat uses agent:main:main
+#   - Telegram DMs use agent:main:main
+#   - Cron jobs with sessionTarget:main use agent:main:main
+#   - Telegram credentials live in openclaw.json, NOT in the session
+#
+# Two eval modes:
 #   SMART=1 — Ollama evaluates whether sessions look abandoned (zero external tokens)
 #   SMART=0 — (default) pure time-based staleness
 #
-# Cron: 0 */3 * * * ~/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh
+# Cron (proxy-only, every 3h):
+#   0 */3 * * * OPENCLAW_DIR=$HOME/.openclaw $HOME/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh
+#
+# Cron (all non-critical, every 6h):
+#   0 */6 * * * OPENCLAW_DIR=$HOME/.openclaw ALL=1 STALE_MS=21600000 $HOME/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh
+#
 # Env:
 #   STALE_MS        age threshold in ms       (default 10800000 = 3h)
-#   SESSION_PREFIX  key prefix to target      (default agent:main:proxy:)
+#   SESSION_PREFIX  key prefix to target      (default agent:main:proxy:) — used only when ALL=0
+#   PROTECTED_KEYS  comma-separated keys to never delete (default agent:main:main)
+#   ALL             1 = clean all non-protected stale sessions, 0 = proxy-only
 #   SMART           1 for Ollama-assisted eval (default 0)
 #   OLLAMA_URL      Ollama API base            (default http://127.0.0.1:11434)
 #   OLLAMA_MODEL    model for smart eval       (default local)
@@ -21,6 +37,8 @@ set -e
 export OPENCLAW_DIR="${OPENCLAW_DIR:-$HOME/.openclaw}"
 export SESSIONS_JSON="${OPENCLAW_DIR}/agents/main/sessions/sessions.json"
 export SESSION_PREFIX="${SESSION_PREFIX:-agent:main:proxy:}"
+export PROTECTED_KEYS="${PROTECTED_KEYS:-agent:main:main}"
+export ALL="${ALL:-0}"
 export STALE_MS="${STALE_MS:-10800000}"
 export SMART="${SMART:-0}"
 export DRY_RUN="${DRY_RUN:-0}"
@@ -30,6 +48,7 @@ export OLLAMA_MODEL="${OLLAMA_MODEL:-}"
 [ ! -f "$SESSIONS_JSON" ] && exit 0
 
 # If OLLAMA_MODEL isn't set, pick the most recently updated Ollama model.
+# Use || true so failure (Ollama down) doesn't abort the script with set -e.
 if [ -z "$OLLAMA_MODEL" ]; then
   OLLAMA_MODEL="$(
     node -e '
@@ -61,7 +80,7 @@ if [ -z "$OLLAMA_MODEL" ]; then
       req.on("timeout", () => { req.destroy(); process.exit(1); });
       req.end();
     ' 2>/dev/null
-  )"
+  )" || true
 fi
 
 # If still empty, fall back to time-based mode silently.
@@ -74,20 +93,25 @@ const fs = require("fs");
 const http = require("http");
 const { URL } = require("url");
 
-const { SESSIONS_JSON, SESSION_PREFIX, STALE_MS, SMART, DRY_RUN, OLLAMA_URL, OLLAMA_MODEL } = process.env;
-const staleMs  = parseInt(STALE_MS, 10);
-const smart    = SMART === "1";
-const dryRun   = DRY_RUN === "1";
-const now      = Date.now();
+const { SESSIONS_JSON, SESSION_PREFIX, PROTECTED_KEYS, ALL, STALE_MS, SMART, DRY_RUN, OLLAMA_URL, OLLAMA_MODEL } = process.env;
+const staleMs     = parseInt(STALE_MS, 10);
+const smart       = SMART === "1";
+const dryRun      = DRY_RUN === "1";
+const cleanAll    = ALL === "1";
+const now         = Date.now();
+
+const protectedSet = new Set((PROTECTED_KEYS || "agent:main:main").split(",").map((k) => k.trim()).filter(Boolean));
 
 let data;
 try { data = JSON.parse(fs.readFileSync(SESSIONS_JSON, "utf8")); }
 catch (_) { process.exit(0); }
 
 // ── Collect stale candidates ────────────────────────────────────────────────
+// Protected sessions (e.g. agent:main:main for heartbeat/Telegram) are never touched.
 const candidates = [];
 for (const key of Object.keys(data)) {
-  if (!key.startsWith(SESSION_PREFIX)) continue;
+  if (protectedSet.has(key)) continue;
+  if (!cleanAll && !key.startsWith(SESSION_PREFIX)) continue;
   const entry = data[key];
   const updatedAt = entry?.updatedAt;
   if (updatedAt == null || (now - updatedAt) < staleMs) continue;
@@ -134,14 +158,15 @@ async function smartEval() {
     " messages=\"" + readLastMessages(c.entry?.sessionFile, 10) + "\""
   ).join("\n");
 
+  const scopeNote = cleanAll ? "disposable sessions (proxy, webchat, etc.)" : "proxy sessions";
   const prompt =
-    "You are a session cleanup evaluator. Decide which proxy sessions to DELETE (abandoned/stale) or KEEP (active/important).\n\n" +
+    "You are a session cleanup evaluator. Decide which " + scopeNote + " to DELETE (abandoned/stale) or KEEP (active/important).\n\n" +
     "Sessions:\n" + summaries + "\n\n" +
     "Rules:\n" +
     "- Sessions >6h with no meaningful content: DELETE\n" +
     "- Sessions with only greetings/test messages: DELETE\n" +
     "- Sessions with ongoing work discussion: KEEP (even if old)\n" +
-    "- When in doubt: DELETE (proxy sessions, not primary)\n\n" +
+    "- When in doubt: DELETE\n\n" +
     "Respond with ONLY a JSON array: [{\"index\":1,\"action\":\"delete\"},{\"index\":2,\"action\":\"keep\"}]";
 
   return new Promise((resolve) => {

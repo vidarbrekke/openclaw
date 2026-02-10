@@ -48,13 +48,18 @@ On "edit round-robin" or new list: write JSON to config path. Ensure `~/.opencla
 
 `http://127.0.0.1:3010/round-robin/status` — JSON with enabled, models, per-session index.
 
-### 5. Clean up stale proxy sessions
+### 5. Clean up stale sessions (cron-safe)
 
-Proxy creates a session per `/new` tab; they accumulate. Targets only `agent:main:proxy:*` (leaves native sessions alone).
+Proxy and Control UI create sessions per tab; they accumulate. The script is fully non-interactive and safe for cron.
+
+**Protected (never deleted):** `agent:main:main` — used by heartbeat, Telegram, and cron jobs with sessionTarget:main. Telegram credentials live in `openclaw.json`, not in sessions.
 
 ```bash
-# Time-based (default): delete sessions older than 3h
+# Proxy-only (default): delete agent:main:proxy:* older than 3h
 ~/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh
+
+# All non-critical: proxy, webchat (agent:main:openai:*), proxy:*, etc.
+ALL=1 STALE_MS=21600000 ~/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh
 
 # Smart mode: Ollama evaluates each session (zero external tokens)
 SMART=1 ~/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh
@@ -63,11 +68,11 @@ SMART=1 ~/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh
 DRY_RUN=1 ~/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh
 ```
 
-Env: `STALE_MS` (default 10800000 = 3h), `SESSION_PREFIX` (default agent:main:proxy:), `SMART` (0=time, 1=ollama), `DRY_RUN` (1=preview), `OLLAMA_MODEL` (default: auto-pick most recently updated Ollama model).
+Env: `STALE_MS` (default 10800000 = 3h), `ALL` (0=proxy-only, 1=all non-protected), `PROTECTED_KEYS` (default agent:main:main), `SESSION_PREFIX` (used when ALL=0), `SMART` (0=time, 1=ollama), `DRY_RUN` (1=preview), `OLLAMA_MODEL` (default: auto-pick).
 
-Smart mode calls Ollama directly and auto-picks the most recently updated local model. You can override with `OLLAMA_MODEL=<ollama-model-name>`.
-
-Cron (every 3h): `0 */3 * * * ~/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh`
+Cron examples:
+- Proxy-only (every 3h): `0 */3 * * * OPENCLAW_DIR=$HOME/.openclaw $HOME/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh`
+- All non-critical (every 6h): `0 */6 * * * OPENCLAW_DIR=$HOME/.openclaw ALL=1 STALE_MS=21600000 $HOME/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh`
 
 ## Commands (in chat)
 

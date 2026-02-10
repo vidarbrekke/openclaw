@@ -147,15 +147,31 @@ assert_eq "exits 0 when sessions.json missing" "0" "$EXIT_CODE"
 echo ""
 
 # ── Test 5: Smart mode with Ollama unavailable ───────────────────────────────
-echo "Test 5: Smart mode, Ollama unavailable (falls back to time-based)"
+echo "Test 5: Smart mode, Ollama unavailable (falls back to time-based or time-based)"
 T5_DIR="$TMPDIR/t5"
 setup_fixtures "$T5_DIR"
 
-# Use a port where nothing is listening
+# Use a port where nothing is listening; script may set SMART=0 when model unavailable
 OUTPUT=$(OPENCLAW_DIR="$T5_DIR" DRY_RUN=1 STALE_MS=3600000 SMART=1 OLLAMA_URL="http://127.0.0.1:19999" bash "$CLEANUP_SCRIPT" 2>&1)
 
-assert_contains "falls back when Ollama unavailable" "falling back" "$OUTPUT"
-assert_contains "still deletes stale sessions" "DELETE agent:main:proxy:stale-1" "$OUTPUT"
+# Either falls back (smart attempted, failed) or runs time-based (SMART forced to 0)
+assert_contains "deletes stale sessions when Ollama down" "DELETE agent:main:proxy:stale-1" "$OUTPUT"
+echo ""
+
+# ── Test 6: ALL=1 mode, protected session preserved ──────────────────────────
+echo "Test 6: ALL=1 cleans non-protected, keeps agent:main:main"
+T6_DIR="$TMPDIR/t6"
+setup_fixtures "$T6_DIR"
+
+OUTPUT=$(OPENCLAW_DIR="$T6_DIR" DRY_RUN=1 STALE_MS=3600000 ALL=1 bash "$CLEANUP_SCRIPT" 2>&1)
+assert_contains "deletes proxy sessions" "DELETE agent:main:proxy:stale-1" "$OUTPUT"
+assert_not_contains "never deletes agent:main:main" "agent:main:main" "$OUTPUT"
+
+# Actual run: verify agent:main:main remains in sessions.json
+OPENCLAW_DIR="$T6_DIR" DRY_RUN=0 STALE_MS=3600000 ALL=1 bash "$CLEANUP_SCRIPT" 2>&1 >/dev/null
+REMAINING=$(node -e "console.log(Object.keys(JSON.parse(require('fs').readFileSync('$T6_DIR/agents/main/sessions/sessions.json','utf8'))).join(','))")
+assert_contains "sessions.json keeps agent:main:main" "agent:main:main" "$REMAINING"
+assert_contains "sessions.json keeps recent proxy" "agent:main:proxy:recent" "$REMAINING"
 echo ""
 
 # ── Summary ──────────────────────────────────────────────────────────────────
