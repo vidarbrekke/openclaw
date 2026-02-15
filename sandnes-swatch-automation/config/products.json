@@ -1,0 +1,140 @@
+{
+  "_comment": "Product mappings for Sandnes Garn SharePoint automation. These map WooCommerce product names to SharePoint folder names.",
+  
+  "version": "1.0.1",
+  "lastUpdated": "2026-02-15",
+  
+  "products": {
+    "Sandnes Garn Tynn Silk Mohair": {
+      "sharepointFolder": "Tynn Silk Mohair",
+      "subfolderVariations": [
+        "Nøstebilder",
+        "Nøstebilder (Skein Pictures)",
+        "Nøstebilder (skein pictures)",
+        "Nøstebilder (SKEIN PICTURES)"
+      ],
+      "filenamePattern": "{sku}_{color}_300dpi_Close-up.jpg"
+    },
+    
+    "Alpakka Følgetråd (lace weight)": {
+      "sharepointFolder": "Alpakka Følgetråd",
+      "subfolderVariations": [
+        "Nøstebilder (skein pictures)",
+        "Nøstebilder (Skein Pictures)",
+        "Nøstebilder"
+      ],
+      "filenamePattern": "{sku}_{color}_300dpi_Close-up.jpg"
+    },
+    
+    "Børstet (Brushed) Alpakka": {
+      "sharepointFolder": "Børstet Alpakka",
+      "subfolderVariations": [
+        "Nøstebilder",
+        "Nøstebilder (Skein Pictures)",
+        "Nøstebilder (skein pictures)"
+      ],
+      "filenamePattern": "{sku}_{color}_300dpi_Close-up.jpg"
+    },
+    
+    "Double Sunday": {
+      "sharepointFolder": "Double Sunday",
+      "subfolderVariations": [
+        "Nøstebilder",
+        "Nøstebilder (Skein Pictures)",
+        "Nøstebilder (skein pictures)"
+      ],
+      "filenamePattern": "{sku}_{color}_300dpi_Close-up.jpg"
+    },
+    
+    "Sandnes Garn | SUNDAY": {
+      "sharepointFolder": "Double Sunday",
+      "subfolderVariations": [
+        "Nøstebilder",
+        "Nøstebilder (Skein Pictures)",
+        "Nøstebilder (skein pictures)"
+      ],
+      "filenamePattern": "{sku}_{color}_300dpi_Close-up.jpg"
+    },
+    
+    "Sandnes Garn x PetiteKnit DOUBLE SUNDAY": {
+      "sharepointFolder": "Double Sunday (PetiteKnit)",
+      "subfolderVariations": [
+        "Nøstebilder",
+        "Nøstebilder (Skein Pictures)",
+        "Nøstebilder (skein pictures)"
+      ],
+      "filenamePattern": "{sku}_{color}_300dpi_Close-up.jpg"
+    },
+    
+    "Tynn Line": {
+      "sharepointFolder": "Line",
+      "subfolderVariations": [
+        "Nøstebilder",
+        "Nøstebilder (Skein Pictures)",
+        "Nøstebilder (skein pictures)"
+      ],
+      "filenamePattern": "{sku}_{color}_300dpi_Close-up.jpg"
+    },
+    
+    "Peer Gynt": {
+      "sharepointFolder": "Peer Gynt",
+      "subfolderVariations": [
+        "Nøstebilder",
+        "Nøstebilder (Skein Pictures)",
+        "Nøstebilder (skein pictures)"
+      ],
+      "filenamePattern": "{sku}_{color}_300dpi_Close-up.jpg"
+    },
+    
+    "Tynn Peer Gynt [Fingering weight, 100% Norwegian Wool non-superwash]": {
+      "sharepointFolder": "Tynn Peer Gynt",
+      "subfolderVariations": [
+        "Nøstebilder",
+        "Nøstebilder (Skein Pictures)",
+        "Nøstebilder (skein pictures)"
+      ],
+      "filenamePattern": "{sku}_{color}_300dpi_Close-up.jpg"
+    },
+    
+    "Sandnes Garn POPPY": {
+      "sharepointFolder": "POPPY",
+      "subfolderVariations": [
+        "Nøstebilder",
+        "Nøstebilder (Skein Pictures)",
+        "Nøstebilder (skein pictures)"
+      ],
+      "filenamePattern": "{sku}_{color}_300dpi_Close-up.jpg"
+    },
+    
+    "Sandnes Garn BALLERINA CHUNKY MOHAIR": {
+      "sharepointFolder": "Ballerina Chunky Mohair",
+      "subfolderVariations": [
+        "Nøstebilder",
+        "Nøstebilder (Skein Pictures)",
+        "Nøstebilder (skein pictures)"
+      ],
+      "filenamePattern": "{sku}_{color}_300dpi_Close-up.jpg"
+    }
+  },
+  
+  "colorNamePatterns": [
+    "{color}",
+    "{Color}",
+    "{color_underscore}",
+    "{colornospace}",
+    "{Colornospace}",
+    "{Firstword}"
+  ],
+  
+  "sharepoint": {
+    "baseUrl": "https://sandnesgarn.sharepoint.com/sites/SandnesGarn/Forhandler%20Arkiv/Nettside%20forhandler%20arkiv/Bildearkiv%20%28picture%20archive%29/Garn%20%28yarn%29",
+    "authUrl": "https://sandnesgarn.sharepoint.com/:f:/s/SandnesGarn/Epxn98W7Lk1LussIYXVmeu0BvGLyiVc-5watfaL4mYjcLg?e=1McFU3"
+  },
+  
+  "processing": {
+    "resizeWidth": 80,
+    "webpQuality": 90,
+    "minFileSize": 1000,
+    "expectedFileSize": 500000
+  }
+}
