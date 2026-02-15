@@ -54,6 +54,8 @@ Proxy and Control UI create sessions per tab; they accumulate. The script is ful
 
 **Protected (never deleted):** `agent:main:main` — used by heartbeat, Telegram, and cron jobs with sessionTarget:main. Telegram credentials live in `openclaw.json`, not in sessions.
 
+**Agents:** Cleans all `agents/*/sessions/sessions.json` (main, default_api, etc.). Other agents have no heartbeat/Telegram — all their sessions are safe to clean when stale.
+
 ```bash
 # Proxy-only (default): delete agent:main:proxy:* older than 3h
 ~/.openclaw/skills/round-robin/cleanup-proxy-sessions.sh

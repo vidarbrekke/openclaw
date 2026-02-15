@@ -1,11 +1,17 @@
 #!/usr/bin/env node
+/**
+ * Sandnes Garn Swatch Automation - Working Cookie + CURL Method
+ * Based on Feb 14 successful downloads
+ */
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const TMP_DIR = '/tmp/openclaw/downloads';
-const DEFAULT_COOKIE_FILE = '/tmp/openclaw/jobs/cookie-header.txt';
+const COOKIE_FILE = '/tmp/openclaw/jobs/cookie-header.txt';
+const COOKIE_JSON = '/tmp/openclaw/jobs/cookies.json';
+const AUTH_URL = 'https://sandnesgarn.sharepoint.com/:f:/s/SandnesGarn/Epxn98W7Lk1LussIYXVmeu0BvGLyiVc-5watfaL4mYjcLg?e=1McFU3';
 
 const CONFIG = {
   wholesale: {
@@ -40,128 +46,88 @@ const PRODUCTS = {
 
 const SUBFOLDERS = { "Alpakka Følgetråd": "Nøstebilder (skein pictures)" };
 
-function runBin(bin, args, options = {}) {
-  return execFileSync(bin, args, {
-    encoding: 'utf-8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-    ...options
-  });
+// Step 1: Fresh Authentication
+function freshAuthenticate() {
+  console.log('\n═══════════════════════════════════════════════════════════');
+  console.log('STEP 1: Fresh SharePoint Authentication');
+  console.log('═══════════════════════════════════════════════════════════\n');
+  
+  // Stop any existing browser
+  try { execSync('openclaw browser stop', { stdio: 'ignore' }); } catch {}
+  
+  // Start browser
+  execSync('openclaw browser start --browser-profile openclaw', { stdio: 'inherit' });
+  console.log('Browser started\n');
+  
+  // Open the auth URL
+  console.log('Opening SharePoint auth folder...');
+  const openResult = execSync(`openclaw browser open "${AUTH_URL}" --browser-profile openclaw --json`, { encoding: 'utf-8' });
+  const { targetId } = JSON.parse(openResult);
+  console.log(`Tab opened: ${targetId}`);
+  
+  // Wait for user interaction
+  console.log('\n⚠️ IMPORTANT: Make sure you are signed in to SharePoint!');
+  console.log('   Wait 10 seconds for auth to complete...\n');
+  execSync('sleep 10');
+  
+  // Export fresh cookies
+  console.log('Exporting fresh cookies...');
+  execSync(`openclaw browser cookies --browser-profile openclaw --target-id ${targetId} --json > ${COOKIE_JSON}`, { encoding: 'utf-8' });
+  
+  // Convert to header
+  const cookieScript = path.resolve(__dirname, '../../scripts/openclaw-cookie-header-from-json.sh');
+  execSync(`${cookieScript} --input ${COOKIE_JSON} --domain sharepoint.com --raw > ${COOKIE_FILE}`);
+  
+  // Verify
+  const cookieSize = fs.statSync(COOKIE_FILE).size;
+  const hasFedAuth = fs.readFileSync(COOKIE_FILE, 'utf-8').includes('FedAuth=');
+  
+  console.log(`\n✅ Fresh cookies exported:`);
+  console.log(`   Size: ${cookieSize} bytes`);
+  console.log(`   FedAuth: ${hasFedAuth ? '✓ present' : '✗ MISSING'}`);
+  
+  return hasFedAuth;
 }
 
-function safeUnlink(filePath) {
+// Step 2: Download via curl + cookies (working Feb 14 method)
+function downloadWithCurl(url, outputPath, cookieFile) {
   try {
-    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  } catch {
-    // Cleanup should not crash the run.
+    const cookie = fs.readFileSync(cookieFile, 'utf-8');
+    // Use -L for redirects, -f to fail on server errors, timeout 30s
+    execSync(`curl -f -s -L -m 30 -H "Cookie: ${cookie}" "${url}" -o "${outputPath}"`, { 
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+    
+    // Check if we got a real image (not HTML error page)
+    if (!fs.existsSync(outputPath)) return false;
+    const size = fs.statSync(outputPath).size;
+    
+    // Must be >1KB (images are 500KB-800KB, error pages are tiny)
+    return size > 1000;
+  } catch (e) {
+    return false;
   }
 }
 
-function cleanValue(value) {
-  if (typeof value !== 'string') return '';
-  return value.trim().replace(/^["']|["']$/g, '').trim();
-}
-
-function requiredEnv(name) {
-  const value = cleanValue(process.env[name]);
-  if (!value) {
-    throw new Error(`Missing required env var: ${name}`);
-  }
-  return value;
-}
-
-function getSiteConfig(siteName) {
-  const site = CONFIG[siteName];
-  if (!site) throw new Error(`Unknown site "${siteName}". Use "wholesale" or "prod".`);
-  return {
-    key: requiredEnv(site.key),
-    user: requiredEnv(site.user),
-    host: requiredEnv(site.host),
-    root: requiredEnv(site.root),
-    csv: site.csv
-  };
-}
-
-function readCookieHeader() {
-  const cookieFile = cleanValue(process.env.SWATCH_COOKIE_FILE) || DEFAULT_COOKIE_FILE;
-  if (!fs.existsSync(cookieFile)) {
-    throw new Error(`Cookie file not found: ${cookieFile}. Set SWATCH_COOKIE_FILE or create the default cookie header file.`);
-  }
-  const cookie = fs.readFileSync(cookieFile, 'utf-8').trim();
-  if (!cookie) throw new Error(`Cookie file is empty: ${cookieFile}`);
-  return cookie;
-}
-
-function parseCsvLine(line) {
-  const result = [];
-  let field = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i];
-    const next = line[i + 1];
-
-    if (char === '"' && inQuotes && next === '"') {
-      field += '"';
-      i += 1;
-      continue;
-    }
-    if (char === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-    if (char === ',' && !inQuotes) {
-      result.push(field);
-      field = '';
-      continue;
-    }
-    field += char;
-  }
-  result.push(field);
-  return result.map((v) => v.trim());
-}
-
-function parse(csv) {
-  const lines = fs
-    .readFileSync(csv, 'utf-8')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (!lines.length) return [];
-
-  const parsed = lines.map(parseCsvLine);
-  const headerIdx = parsed.findIndex((cols) => {
-    const c = cols.map((x) => x.toLowerCase());
-    return c.includes('product_name') && c.includes('variation_id') && c.includes('variant_label');
-  });
-
-  const startIdx = headerIdx >= 0 ? headerIdx + 1 : 0;
-  const headers = headerIdx >= 0 ? parsed[headerIdx].map((h) => h.toLowerCase()) : [];
-  const idx = (name, fallback) => {
-    const found = headers.indexOf(name);
-    return found >= 0 ? found : fallback;
-  };
-  const productIdx = idx('product_name', 1);
-  const vidIdx = idx('variation_id', 2);
-  const skuIdx = idx('sku', 3);
-  const variantIdx = idx('variant_label', 6);
-
-  return parsed
-    .slice(startIdx)
-    .map((cols) => ({
-      sku: cols[skuIdx] || '',
-      product: cols[productIdx] || '',
-      variant: cols[variantIdx] || '',
-      vid: cols[vidIdx] || ''
-    }))
-    .filter((r) => r.sku && r.vid && r.product && r.variant);
+// Color name patterns (for filename guessing)
+function patterns(color) {
+  const words = color.split('-');
+  return [
+    color,
+    color.charAt(0).toUpperCase() + color.slice(1),
+    color.replace(/-/g, '_'),
+    color.replace(/-/g, ''),
+    (color.charAt(0).toUpperCase() + color.slice(1)).replace(/-/g, ''),
+    words[0].charAt(0).toUpperCase() + words[0].slice(1)
+  ];
 }
 
 function url(product, subfolder, filename) {
-  const base = "https://sandnesgarn.sharepoint.com/sites/SandnesGarn/Forhandler%20Arkiv/Nettsite%20forhandler%20arkiv/Bildearkiv%20%28picture%20archive%29/Garn%20%28yarn%29";
-  const p = encodeURIComponent(product);
-  const f = encodeURIComponent(filename);
-  return subfolder ? `${base}/${p}/${encodeURIComponent(subfolder)}/${f}` : `${base}/${p}/${f}`;
+  const base = "https://sandnesgarn.sharepoint.com/sites/SandnesGarn/Forhandler%20Arkiv/Nettside%20forhandler%20arkiv/Bildearkiv%20%28picture%20archive%29/Garn%20%28yarn%29";
+  return subfolder 
+    ? `${base}/${encodeURIComponent(product)}/${encodeURIComponent(subfolder)}/${encodeURIComponent(filename)}`
+    : `${base}/${encodeURIComponent(product)}/${encodeURIComponent(filename)}`;
 }
 
 function colorName(variant) {
@@ -169,138 +135,193 @@ function colorName(variant) {
   return (m ? m[1] : variant).toLowerCase().replace(/\s+/g, '-');
 }
 
-function patterns(color) {
-  const words = color.split('-');
-  return [
-    color,                                              // mint-green
-    color.charAt(0).toUpperCase() + color.slice(1),     // Mint-green
-    color.replace(/-/g, '_'),                           // mint_green
-    color.replace(/-/g, ''),                            // mintgreen
-    (color.charAt(0).toUpperCase() + color.slice(1)).replace(/-/g, ''),  // Mintgreen / Rainforest
-    words[0].charAt(0).toUpperCase() + words[0].slice(1)  // Mint (first word only)
-  ];
+function runBin(bin, args, options = {}) {
+  return execFileSync(bin, args, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], ...options });
 }
 
-function processRow(row, cfg, cookie, tempFiles, dryRun) {
-  const product = PRODUCTS[row.product];
-  if (!product) return { skip: true };
+function safeUnlink(filePath) {
+  try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch {}
+}
 
+function parseCsvLine(line) {
+  const result = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const next = line[i + 1];
+    if (char === '"' && inQuotes && next === '"') { field += '"'; i++; continue; }
+    if (char === '"') { inQuotes = !inQuotes; continue; }
+    if (char === ',' && !inQuotes) { result.push(field); field = ''; continue; }
+    field += char;
+  }
+  result.push(field);
+  return result.map(v => v.trim());
+}
+
+function parse(csv) {
+  const lines = fs.readFileSync(csv, 'utf-8').split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const parsed = lines.map(parseCsvLine);
+  const headerIdx = parsed.findIndex(cols => {
+    const c = cols.map(x => x.toLowerCase());
+    return c.includes('product_name') && c.includes('variation_id') && (c.includes('variant_label') || c.includes('variant_value'));
+  });
+  const startIdx = headerIdx >= 0 ? headerIdx + 1 : 0;
+  const headers = headerIdx >= 0 ? parsed[headerIdx].map(h => h.toLowerCase()) : [];
+  const idx = (name, fallback) => { const f = headers.indexOf(name); return f >= 0 ? f : fallback; };
+  const productIdx = idx('product_name', 1);
+  const vidIdx = idx('variation_id', 2);
+  const skuIdx = idx('sku', 3);
+  const variantIdx = idx('variant_label', idx('variant_value', 6));
+  return parsed.slice(startIdx).map(cols => ({
+    sku: cols[skuIdx] || '',
+    product: cols[productIdx] || '',
+    variant: cols[variantIdx] || '',
+    vid: cols[vidIdx] || ''
+  })).filter(r => r.sku && r.vid && r.product && r.variant);
+}
+
+function getSiteConfig(siteName) {
+  const site = CONFIG[siteName];
+  if (!site) throw new Error(`Unknown site "${siteName}"`);
+  return {
+    key: process.env[site.key] || '',
+    user: process.env[site.user] || '',
+    host: process.env[site.host] || '',
+    root: process.env[site.root] || '',
+    csv: site.csv
+  };
+}
+
+function processRow(row, cfg, tempFiles, dryRun) {
+  const product = PRODUCTS[row.product];
+  if (!product) return { skip: true, reason: 'no product mapping' };
+  
   const subfolder = SUBFOLDERS[product] || "Nøstebilder";
   const color = colorName(row.variant);
-
+  
   for (const p of patterns(color)) {
     const file = `${row.sku}_${p}_300dpi_Close-up.jpg`;
     const u = url(product, subfolder, file);
     const out = path.join(TMP_DIR, file);
-
+    
+    // Try download with curl + fresh cookies
+    const success = downloadWithCurl(u, out, COOKIE_FILE);
+    
+    if (!success) {
+      safeUnlink(out);
+      continue;
+    }
+    
+    tempFiles.add(out);
+    
     try {
-      runBin('curl', ['-f', '-s', '-m', '10', '-H', `Cookie: ${cookie}`, u, '-o', out]);
-      tempFiles.add(out);
-      if (fs.statSync(out).size === 0) { safeUnlink(out); tempFiles.delete(out); continue; }
-
+      // Resize and convert
       const swatch = path.join(TMP_DIR, `${row.sku}_${Date.now()}.webp`);
       runBin('magick', [out, '-resize', '80x', '-quality', '90', swatch]);
       tempFiles.add(swatch);
       safeUnlink(out);
       tempFiles.delete(out);
-
+      
       if (dryRun) {
         safeUnlink(swatch);
         tempFiles.delete(swatch);
         return { success: true, aid: '(dry-run)', file };
       }
-
+      
+      // Upload to server
       const remote = `/tmp/${row.sku}_${Date.now()}.webp`;
       runBin('scp', ['-i', cfg.key, swatch, `${cfg.user}@${cfg.host}:${remote}`]);
       const wpCmd = `cd ${cfg.root} && wp media import ${remote} --porcelain && rm ${remote}`;
       const aid = runBin('ssh', ['-i', cfg.key, `${cfg.user}@${cfg.host}`, wpCmd]).trim().split('\n').pop();
       safeUnlink(swatch);
       tempFiles.delete(swatch);
-
+      
       return { success: true, aid, file };
     } catch (error) {
-      // curl -f uses exit code 22 for HTTP errors; keep trying patterns in that case.
-      if (error && error.status !== 22) {
-        const msg = (error.stderr || error.message || '').toString().trim();
-        console.error(`  [warn] ${file}: ${msg || 'command failed'}`);
-      }
       safeUnlink(out);
       tempFiles.delete(out);
     }
   }
-
-  return { notfound: true };
+  
+  return { notfound: true, reason: 'no color pattern matched' };
 }
 
 function parseArgs(argv) {
   const args = (argv || process.argv).slice(2);
   const dryRun = args.includes('--dry-run');
-  const siteName = (args.filter((a) => a !== '--dry-run')[0] || 'wholesale').toLowerCase();
-  return { dryRun, siteName };
+  const skipAuth = args.includes('--skip-auth');
+  const siteName = (args.filter(a => a !== '--dry-run' && a !== '--skip-auth')[0] || 'wholesale').toLowerCase();
+  return { dryRun, skipAuth, siteName };
 }
 
+// Main
 function main() {
-  const { dryRun, siteName } = parseArgs(process.argv);
+  const { dryRun, skipAuth, siteName } = parseArgs(process.argv);
   const cfg = getSiteConfig(siteName);
-  const cookie = readCookieHeader();
   const tempFiles = new Set();
   fs.mkdirSync(TMP_DIR, { recursive: true });
   const rows = parse(cfg.csv);
   const results = { success: [], notfound: [], skip: [] };
-
+  
   if (dryRun) {
-    console.log('\n[DRY RUN] No uploads or SSH; downloads and local processing only.\n');
+    console.log('\n[DRY RUN] Downloads only, no uploads.\n');
   }
-  console.log(`\nProcessing ${rows.length} SKUs on ${siteName}...\n`);
-
+  
+  // Step 1: Fresh auth unless skipped
+  if (!skipAuth) {
+    const authOk = freshAuthenticate();
+    if (!authOk) {
+      console.error('\n❌ Authentication failed');
+      process.exit(1);
+    }
+  } else {
+    console.log('\nUsing existing cookies (--skip-auth)\n');
+  }
+  
+  console.log('\n═══════════════════════════════════════════════════════════');
+  console.log(`STEP 2: Processing ${rows.length} SKUs via curl + cookies`);
+  console.log('═══════════════════════════════════════════════════════════\n');
+  
   try {
     for (const row of rows) {
       process.stdout.write(`[${row.sku}] `);
-      const r = processRow(row, cfg, cookie, tempFiles, dryRun);
-
+      const r = processRow(row, cfg, tempFiles, dryRun);
+      
       if (r.success) {
-        console.log(dryRun ? `OK (would upload) ${r.file}` : `OK ${r.file} -> ID ${r.aid}`);
+        console.log(dryRun ? `OK (dry-run) ${r.file}` : `OK ${r.file} -> ID ${r.aid}`);
         results.success.push(row);
       } else if (r.skip) {
-        console.log('skip');
+        console.log(`skip (${r.reason})`);
         results.skip.push(row);
       } else {
-        console.log('not found');
+        console.log(`not found (${r.reason})`);
         results.notfound.push(row);
       }
     }
-
-    console.log(`\nOK ${results.success.length} | not found ${results.notfound.length} | skip ${results.skip.length}\n`);
-
+    
+    console.log(`\n═══════════════════════════════════════════════════════════`);
+    console.log(`Results: OK ${results.success.length} | Not Found ${results.notfound.length} | Skip ${results.skip.length}`);
+    console.log(`═══════════════════════════════════════════════════════════\n`);
+    
     if (results.success.length > 0 && !dryRun) {
+      console.log('Applying swatch assignments...');
       runBin('ssh', ['-i', cfg.key, `${cfg.user}@${cfg.host}`, `cd ${cfg.root} && wp mk-attr swatch_missing_candidates --apply`]);
-      console.log(`OK ${results.success.length} assigned\n`);
-    } else if (results.success.length > 0 && dryRun) {
-      console.log(`[DRY RUN] Would have uploaded ${results.success.length} and run --apply.\n`);
+      console.log(`✓ ${results.success.length} swatches assigned\n`);
     }
   } finally {
-    for (const file of tempFiles) {
-      safeUnlink(file);
-    }
+    for (const file of tempFiles) safeUnlink(file);
   }
 }
-
-module.exports = {
-  cleanValue,
-  parseCsvLine,
-  parse,
-  colorName,
-  patterns,
-  getSiteConfig,
-  readCookieHeader,
-  parseArgs
-};
 
 if (require.main === module) {
   try {
     main();
-  } catch (error) {
-    console.error(`[fatal] ${error.message}`);
+  } catch (err) {
+    console.error(`[fatal] ${err.message}`);
     process.exit(1);
   }
 }
+
+module.exports = { parse, parseCsvLine, patterns };

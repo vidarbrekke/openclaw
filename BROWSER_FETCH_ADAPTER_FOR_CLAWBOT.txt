@@ -1,0 +1,125 @@
+Drop-in adapter for Clawbot: replace downloader with Playwright in-page fetch.
+This mirrors the current processRow flow and only swaps the download mechanism.
+
+1) Add these helpers (Node + Playwright bridge)
+
+```js
+const fs = require('fs');
+const path = require('path');
+
+async function fetchFileInPage(page, fileUrl) {
+  return await page.evaluate(async (url) => {
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      const contentType = res.headers.get('content-type') || '';
+      const status = res.status;
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        return {
+          ok: false,
+          status,
+          contentType,
+          size: text?.length || 0,
+          error: `HTTP ${status}`,
+          bodySnippet: (text || '').slice(0, 300),
+        };
+      }
+
+      const ab = await res.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(ab));
+      return {
+        ok: true,
+        status,
+        contentType,
+        size: bytes.length,
+        bytes,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        status: 0,
+        contentType: '',
+        size: 0,
+        error: String(err?.message || err),
+      };
+    }
+  }, fileUrl);
+}
+
+function saveFetchedBytes(result, outPath) {
+  if (!result?.ok || !Array.isArray(result.bytes)) return false;
+  const buf = Buffer.from(result.bytes);
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, buf);
+  return buf.length > 1000; // reject tiny error payloads
+}
+
+async function tryDownloadWithBrowser(page, url, outputPath) {
+  const res = await fetchFileInPage(page, url);
+
+  console.log(JSON.stringify({
+    downloader: 'browser-fetch',
+    url,
+    ok: res.ok,
+    status: res.status,
+    contentType: res.contentType,
+    size: res.size,
+    error: res.error || null
+  }));
+
+  if (!res.ok) return false;
+  if (!/^image\//i.test(res.contentType || '')) return false;
+  return saveFetchedBytes(res, outputPath);
+}
+```
+
+2) Replace downloader call inside processRow(...)
+
+If your current code has:
+
+```js
+const success = tryDownloadWithJob(u, out, cookie, 30000);
+```
+
+replace with:
+
+```js
+const success = await tryDownloadWithBrowser(page, u, out);
+```
+
+And make sure processRow is async and accepts page:
+
+```js
+async function processRow(row, cfg, page, tempFiles, dryRun) { ... }
+```
+
+3) Update caller loop
+
+```js
+for (const row of rows) {
+  process.stdout.write(`[${row.sku}] `);
+  const r = await processRow(row, cfg, page, tempFiles, dryRun);
+  ...
+}
+```
+
+4) Add one smoke test before SKU loop
+
+```js
+const smoke = await fetchFileInPage(page, KNOWN_GOOD_FILE_URL);
+console.log('smoke', smoke.status, smoke.contentType, smoke.size, smoke.error || '');
+if (!smoke.ok || !/^image\//i.test(smoke.contentType || '')) {
+  throw new Error('SharePoint browser fetch smoke test failed; aborting run.');
+}
+```
+
+5) Important runtime note
+
+Use an already-authenticated page on the same SharePoint origin before calling fetchFileInPage.
+If session is not established in that context, this will still fail.

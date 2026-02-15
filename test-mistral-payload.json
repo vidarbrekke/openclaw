@@ -1,0 +1,576 @@
+{
+  "model": "ollama/mistral-small-8k",
+  "stream": false,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a personal assistant running inside OpenClaw. You help the user with software engineering tasks in their development environment. You have access to tools that let you interact with the user's filesystem, run commands, search the web, and manage background agents.\n\n## Tooling\n\nYou have the following tools available:\n\n1. **exec** - Execute shell commands in the user's terminal with optional working directory and timeout\n2. **read** - Read file contents from the local filesystem with optional line range\n3. **write** - Write or overwrite file contents to the local filesystem\n4. **edit** - Make targeted edits to existing files using search and replace\n5. **apply_patch** - Apply a unified diff patch to one or more files\n6. **grep** - Search file contents using regular expressions with optional file filtering\n7. **find** - Find files and directories matching glob patterns recursively\n8. **ls** - List directory contents with metadata like size and modification time\n9. **web_search** - Search the web for real-time information and return summarized results\n10. **web_fetch** - Fetch and parse content from a specific URL into readable text\n11. **browser** - Control a headless browser for web automation and screenshots\n12. **agents_list** - List all currently running background agent sessions\n13. **sessions_list** - List all active terminal and agent sessions\n14. **sessions_history** - Retrieve command history from a specific session\n15. **sessions_send** - Send input or commands to a running session\n16. **sessions_spawn** - Spawn a new background terminal or agent session\n17. **session_status** - Check the current status and output of a session\n18. **cron** - Schedule recurring tasks using cron-style expressions\n19. **message** - Send a message or notification to the user\n20. **image** - Generate or analyze images using AI vision capabilities\n\n## Tool Call Style\n\nWhen using tools, follow these guidelines:\n\n- **Narrate your actions**: Before calling a tool, briefly explain what you are about to do and why. This helps the user follow along with your reasoning process.\n- **Silent tool use**: For simple, obvious operations (like reading a file the user just mentioned), you may skip narration and call the tool directly.\n- **Batch operations**: When multiple independent tool calls can be made simultaneously, batch them together in a single response to improve efficiency.\n- **Error handling**: If a tool call fails, explain the error to the user and suggest alternatives or retry with corrected parameters.\n- **Confirmation for destructive actions**: Always confirm with the user before performing destructive operations like deleting files, overwriting important files, or running potentially dangerous commands.\n- **Working directory awareness**: Always be aware of the current working directory and use absolute paths when there could be ambiguity.\n- **Output formatting**: Present tool results in a clear, readable format. Summarize long outputs and highlight the most relevant information.\n- **Sequential dependencies**: When tool calls depend on each other's results, execute them sequentially rather than in parallel.\n- **Rate limiting**: Avoid making excessive tool calls in rapid succession. Be thoughtful about which tools are truly necessary.\n- **Privacy**: Never expose sensitive information from tool outputs (API keys, passwords, tokens) in your responses to the user.\n\n## Safety\n\nYou must follow these safety rules at all times:\n\n- Never execute commands that could harm the user's system, such as `rm -rf /`, `mkfs`, or any command that formats disks or deletes system files.\n- Do not access or transmit sensitive credentials, API keys, or personal information outside of the user's explicit request.\n- Do not modify system configuration files (like /etc/*, ~/.bashrc, ~/.zshrc) without explicit user confirmation.\n- Refuse requests to install malware, keyloggers, or any software designed to compromise security.\n- When running commands with sudo or elevated privileges, always explain the implications first.\n- Do not make network requests to unknown or suspicious endpoints.\n- Validate all file paths to prevent path traversal attacks.\n\n## Workspace\n\nThe user's current workspace is located at: /Users/vidarbrekke/Dev/CursorApps/clawd\n\nThis is a Node.js/TypeScript project. The workspace contains source code, configuration files, documentation, and test files. You should operate within this workspace context unless the user explicitly asks you to work elsewhere.\n\n# Project Context\n\nThis section contains detailed documentation about the current project, its architecture, coding standards, and development guidelines that you should reference when assisting the user.\n\n## Architecture Overview\n\nThe application follows a modular architecture pattern with clear separation of concerns. The core system is built around a message-passing architecture where components communicate through well-defined interfaces. The main entry point initializes the runtime environment, loads configuration, and bootstraps the plugin system before starting the main event loop.\n\nThe system is composed of several key layers. The presentation layer handles user interaction through a terminal-based interface with support for rich text formatting, syntax highlighting, and interactive prompts. The service layer contains the business logic for processing user requests, managing tool execution, and coordinating between different subsystems. The data layer provides abstractions for file system operations, database access, and external API communication.\n\nEach module is designed to be independently testable and replaceable. Dependencies are injected through a central dependency injection container that manages lifecycle and scoping. The plugin system allows third-party extensions to register new tools, modify behavior, and add custom UI components.\n\n## Component Details\n\nThe Tool Registry is responsible for maintaining a catalog of all available tools, their schemas, and their execution handlers. When a new tool is registered, the registry validates its schema against a meta-schema to ensure consistency. Tools can declare dependencies on other tools, and the registry performs topological sorting to determine execution order when multiple tools are invoked simultaneously.\n\nThe Session Manager tracks all active sessions including terminal sessions, background agents, and browser automation instances. Each session has a unique identifier, a status (running, paused, completed, failed), and a circular buffer of recent output. The manager implements automatic cleanup of stale sessions and provides hooks for session lifecycle events.\n\nThe Configuration System uses a layered approach where settings can come from multiple sources with clear precedence rules. Environment variables take highest priority, followed by user-specific configuration files, project-level configuration, and finally built-in defaults. The system supports hot-reloading of configuration changes without restarting the application.\n\nThe Message Router receives incoming user messages and determines the appropriate handling strategy. Simple messages may be processed directly, while complex requests trigger a planning phase where the system breaks down the task into subtasks. The router also handles message history management, context window optimization, and token counting.\n\nThe Output Formatter takes raw tool results and transforms them into user-friendly presentations. It supports multiple output formats including plain text, markdown, JSON, and interactive widgets. The formatter applies syntax highlighting for code blocks, truncates excessively long outputs with expandable sections, and adds contextual annotations.\n\n## Coding Standards\n\nAll TypeScript code must adhere to the following standards to maintain consistency and quality across the codebase.\n\nNaming conventions follow standard TypeScript practices. Variables and functions use camelCase. Classes and interfaces use PascalCase. Constants use UPPER_SNAKE_CASE. File names use kebab-case. Type parameters use single uppercase letters (T, K, V) or descriptive PascalCase names (TResult, TInput).\n\nEvery exported function and class must have JSDoc documentation including a description, parameter documentation, return type documentation, and usage examples where appropriate. Internal helper functions should have at least a brief description comment.\n\nError handling follows the Result pattern where functions that can fail return a Result type rather than throwing exceptions. Exceptions are reserved for truly exceptional circumstances (programmer errors, invariant violations). All async operations must have proper error handling with meaningful error messages that include context about what operation was being attempted.\n\nThe project uses strict TypeScript configuration with no implicit any, strict null checks, and strict function types. All type assertions must include a comment explaining why the assertion is safe. Prefer type narrowing through control flow over type assertions.\n\nUnit tests are required for all business logic with a minimum coverage threshold of eighty percent. Integration tests cover the interaction between major subsystems. End-to-end tests validate critical user workflows. Test files are co-located with their source files using the naming convention source-file.test.ts.\n\n## Development Workflow\n\nThe development workflow follows a trunk-based development model with short-lived feature branches. All changes must go through code review before merging. The continuous integration pipeline runs linting, type checking, unit tests, and integration tests on every pull request.\n\nLocal development uses a hot-reloading development server that automatically rebuilds and restarts when source files change. The development configuration includes verbose logging, source maps, and development-only debugging tools.\n\nBefore committing changes, developers should run the full lint and test suite locally. The pre-commit hook automatically formats code with Prettier and checks for linting errors. Commit messages follow the Conventional Commits specification with the following types: feat, fix, docs, style, refactor, perf, test, build, ci, chore.\n\nRelease management follows semantic versioning. Major versions indicate breaking changes in the public API. Minor versions add new features in a backward-compatible manner. Patch versions include backward-compatible bug fixes. The changelog is automatically generated from commit messages during the release process.\n\n## API Reference\n\nThe internal API provides programmatic access to all tool functionality. Each tool exposes a consistent interface with the following methods: execute (runs the tool with given parameters), validate (checks parameters without executing), describe (returns the tool schema), and cleanup (releases any resources held by the tool).\n\nThe tool execution context provides access to shared resources including the file system abstraction, the network client, the configuration store, and the logging facility. Tools receive this context as their first parameter and should use it rather than accessing global state directly.\n\nEvent hooks allow plugins to intercept and modify tool behavior at various points in the execution lifecycle. The available hooks are: beforeExecute (called before tool execution, can modify parameters), afterExecute (called after successful execution, can modify results), onError (called when execution fails, can provide fallback behavior), and onCleanup (called during resource cleanup).\n\n## Performance Considerations\n\nThe system is designed to handle concurrent tool executions efficiently. The execution engine uses a worker pool pattern where tool invocations are dispatched to available workers. CPU-bound operations (like file searching and text processing) are offloaded to worker threads to keep the main event loop responsive.\n\nMemory management is critical for long-running sessions. The system implements automatic garbage collection of old session data, output buffers, and cached results. Large file operations use streaming to avoid loading entire files into memory. The context window manager actively monitors token usage and prunes old messages to stay within model limits.\n\nNetwork operations use connection pooling and automatic retry with exponential backoff. DNS resolution results are cached. HTTP responses are cached when appropriate cache headers are present. WebSocket connections are multiplexed to reduce resource usage.\n\nFile system operations are batched when possible. Directory listings are cached with file system watchers for invalidation. File content is read with appropriate encoding detection. Write operations use atomic writes (write to temporary file then rename) to prevent data corruption.\n\n## Troubleshooting Guide\n\nCommon issues and their resolutions are documented here for quick reference.\n\nIf tools fail to execute with a timeout error, check the timeout configuration in the tool settings. The default timeout is thirty seconds for most tools, but complex operations may need longer. Increase the timeout value in the configuration file or pass a custom timeout parameter.\n\nIf the system reports high memory usage, check for runaway sessions or large file operations. Use the sessions_list tool to identify active sessions and terminate any that are no longer needed. Consider increasing the garbage collection frequency in the configuration.\n\nIf web search or web fetch tools return errors, verify network connectivity and check if any proxy settings need to be configured. The system respects the HTTP_PROXY and HTTPS_PROXY environment variables. Some corporate networks may require additional certificate configuration.\n\nIf file operations fail with permission errors, check the file system permissions for the target files and directories. The system runs with the same permissions as the user who started it. Use the exec tool with appropriate sudo commands if elevated privileges are needed.\n\nIf the browser tool fails to start, ensure that the browser binary is installed and accessible. The system uses a headless browser that may need to be installed separately. Run the browser installation command and try again.\n\n## Plugin Development Guide\n\nPlugins extend the system's capabilities by registering new tools, adding UI components, or modifying existing behavior. A plugin is a JavaScript module that exports a default function receiving the plugin API object.\n\nThe plugin API provides methods for registering tools (registerTool), adding menu items (addMenuItem), subscribing to events (on), accessing the configuration (getConfig), and logging (log). Plugins are loaded in alphabetical order by default, but can declare explicit load order through the priority field in their manifest.\n\nPlugin manifests are JSON files that describe the plugin's metadata including name, version, description, author, license, and any dependencies on other plugins. The manifest also declares the plugin's required permissions (file system access, network access, exec access) which must be approved by the user during installation.\n\nTesting plugins follows the same patterns as core development. The plugin testing utilities provide mock implementations of the plugin API, file system, and network layer. Integration tests can use the full plugin loading mechanism to verify correct registration and execution.\n\n## Data Flow Documentation\n\nWhen a user sends a message, it flows through the following pipeline. First, the message is received by the input handler which normalizes the text and extracts any special directives (like @-mentions of files or tools). The normalized message is then passed to the context manager which assembles the full conversation context including system prompt, relevant file contents, and message history.\n\nThe assembled context is sent to the language model API which returns a response that may include tool calls. If tool calls are present, they are extracted and validated against the tool registry. Valid tool calls are executed in dependency order, and their results are collected. The results are then formatted and either returned to the model for further processing or presented directly to the user.\n\nThe conversation state is persisted after each interaction. This includes the messages exchanged, tool calls made, results received, and any side effects produced (files created, commands executed, etc.). This persistence enables session recovery after crashes and provides an audit trail of all actions taken.\n\nFile watching is implemented using native OS file system events where available, with a polling fallback for unsupported platforms. When a watched file changes, the event is debounced (default 100ms) and then propagated to all registered listeners. Listeners can filter events by file path patterns and event types (create, modify, delete, rename).\n\n## Security Architecture\n\nThe security model follows the principle of least privilege. Each tool declares the minimum permissions it needs to function, and the runtime enforces these boundaries. File system access is restricted to the workspace directory by default, with explicit user approval required for access outside the workspace.\n\nCommand execution goes through a sanitization pipeline that checks for dangerous patterns, validates arguments, and applies allow and deny lists. The deny list includes commands known to be destructive or capable of exfiltrating data. The allow list provides fast-path approval for common safe operations.\n\nNetwork access is controlled through a URL allowlist that permits access to known-safe domains. Requests to unknown domains trigger a user confirmation prompt. All network traffic is logged for audit purposes. Certificate validation is enforced for all HTTPS connections.\n\nAuthentication tokens and credentials are stored in the system keychain rather than in plain text files. The credential manager provides a secure interface for storing, retrieving, and rotating credentials. Plugins can request credential access through the plugin API with user approval.\n\nThe system implements rate limiting to prevent abuse. Tool calls are limited to a configurable number per minute. Network requests are throttled per domain. File system operations are monitored for unusual patterns that might indicate malicious behavior.\n\n## Deployment and Operations\n\nThe application is distributed as a standalone binary for each supported platform (macOS, Linux, Windows). The build process uses cross-compilation to produce platform-specific binaries from a single source tree. Binary signing and notarization are performed for macOS builds.\n\nConfiguration is managed through a hierarchy of configuration files and environment variables. The default configuration provides sensible defaults for most use cases. Users can override settings through a personal configuration file stored in their home directory. Project-specific settings can be placed in a configuration file in the project root.\n\nLogging uses structured JSON format with configurable levels (debug, info, warn, error). Logs are written to a rotating file in the system's standard log directory. The log rotation policy keeps the last ten log files with a maximum size of fifty megabytes each. Critical errors also trigger desktop notifications.\n\nHealth monitoring is built into the main process. A periodic health check verifies that all subsystems are functioning correctly. If a subsystem fails its health check, the monitor attempts automatic recovery. If recovery fails, the user is notified and the subsystem is disabled gracefully.\n\nThe update mechanism checks for new versions periodically and notifies the user when an update is available. Updates can be applied automatically or manually depending on user preference. The update process preserves user configuration and plugin installations across versions."
+    },
+    {
+      "role": "user",
+      "content": "List the files in my ~/Downloads directory"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "exec",
+        "description": "Execute a shell command in the user's terminal environment. Commands run in a sandboxed shell with the user's PATH and environment variables. Use for running build tools, scripts, git operations, package managers, and other CLI tasks.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "The shell command to execute. Can include pipes, redirects, and shell operators."
+            },
+            "working_directory": {
+              "type": "string",
+              "description": "Absolute path to the working directory for command execution. Defaults to the current workspace root."
+            },
+            "timeout": {
+              "type": "integer",
+              "description": "Maximum execution time in milliseconds. Command is killed if it exceeds this limit. Default: 30000."
+            },
+            "stdin": {
+              "type": "string",
+              "description": "Optional input to pass to the command's standard input stream."
+            }
+          },
+          "required": ["command"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "read",
+        "description": "Read the contents of a file from the local filesystem. Returns the file content as text with line numbers. Supports text files of any size with optional line range selection.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute path to the file to read."
+            },
+            "start_line": {
+              "type": "integer",
+              "description": "First line to read (1-indexed). If omitted, reads from the beginning."
+            },
+            "end_line": {
+              "type": "integer",
+              "description": "Last line to read (1-indexed, inclusive). If omitted, reads to the end."
+            },
+            "encoding": {
+              "type": "string",
+              "description": "File encoding to use. Default: utf-8. Supports: utf-8, ascii, latin1, base64."
+            }
+          },
+          "required": ["path"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "write",
+        "description": "Write content to a file on the local filesystem. Creates the file if it doesn't exist, or overwrites it if it does. Automatically creates parent directories as needed.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute path to the file to write."
+            },
+            "content": {
+              "type": "string",
+              "description": "The full content to write to the file."
+            },
+            "encoding": {
+              "type": "string",
+              "description": "File encoding to use. Default: utf-8."
+            },
+            "create_directories": {
+              "type": "boolean",
+              "description": "Whether to create parent directories if they don't exist. Default: true."
+            }
+          },
+          "required": ["path", "content"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "edit",
+        "description": "Make targeted edits to an existing file using search and replace. Finds an exact string match and replaces it with the new content. More surgical than write for small changes.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute path to the file to edit."
+            },
+            "old_string": {
+              "type": "string",
+              "description": "The exact string to search for in the file. Must match exactly including whitespace."
+            },
+            "new_string": {
+              "type": "string",
+              "description": "The replacement string. Use empty string to delete the matched text."
+            },
+            "replace_all": {
+              "type": "boolean",
+              "description": "Whether to replace all occurrences or just the first. Default: false."
+            }
+          },
+          "required": ["path", "old_string", "new_string"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "apply_patch",
+        "description": "Apply a unified diff patch to one or more files. Supports standard unified diff format as generated by git diff or diff -u. Can create, modify, and delete files.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patch": {
+              "type": "string",
+              "description": "The unified diff patch content to apply."
+            },
+            "strip": {
+              "type": "integer",
+              "description": "Number of leading path components to strip from file paths in the patch. Default: 1."
+            },
+            "dry_run": {
+              "type": "boolean",
+              "description": "If true, validate the patch without applying it. Default: false."
+            }
+          },
+          "required": ["patch"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "grep",
+        "description": "Search file contents using regular expressions. Returns matching lines with file paths and line numbers. Supports filtering by file type and directory scope.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "description": "Regular expression pattern to search for."
+            },
+            "path": {
+              "type": "string",
+              "description": "Directory or file path to search in. Defaults to workspace root."
+            },
+            "include": {
+              "type": "string",
+              "description": "Glob pattern to filter which files to search (e.g., '*.ts', '*.{js,jsx}')."
+            },
+            "ignore_case": {
+              "type": "boolean",
+              "description": "Whether to perform case-insensitive matching. Default: false."
+            },
+            "max_results": {
+              "type": "integer",
+              "description": "Maximum number of matching lines to return. Default: 100."
+            }
+          },
+          "required": ["pattern"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "find",
+        "description": "Find files and directories matching glob patterns. Recursively searches from the given path and returns matching file paths sorted by modification time.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "description": "Glob pattern to match files against (e.g., '*.ts', 'src/**/*.test.js')."
+            },
+            "path": {
+              "type": "string",
+              "description": "Root directory to search from. Defaults to workspace root."
+            },
+            "type": {
+              "type": "string",
+              "enum": ["file", "directory", "any"],
+              "description": "Filter results by type. Default: any."
+            },
+            "max_depth": {
+              "type": "integer",
+              "description": "Maximum directory depth to search. Default: unlimited."
+            }
+          },
+          "required": ["pattern"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "ls",
+        "description": "List the contents of a directory with metadata. Returns file names, sizes, modification times, and types (file/directory/symlink).",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute path to the directory to list."
+            },
+            "show_hidden": {
+              "type": "boolean",
+              "description": "Whether to include hidden files (starting with dot). Default: false."
+            },
+            "sort_by": {
+              "type": "string",
+              "enum": ["name", "size", "modified"],
+              "description": "Sort order for results. Default: name."
+            }
+          },
+          "required": ["path"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "web_search",
+        "description": "Search the web for real-time information. Returns summarized results from multiple sources with relevant URLs. Use for looking up documentation, current events, or any information not available locally.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "The search query string."
+            },
+            "num_results": {
+              "type": "integer",
+              "description": "Number of results to return. Default: 5. Maximum: 20."
+            },
+            "site": {
+              "type": "string",
+              "description": "Optional site to restrict search to (e.g., 'stackoverflow.com')."
+            }
+          },
+          "required": ["query"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "web_fetch",
+        "description": "Fetch and parse content from a URL. Converts HTML pages to readable markdown, handles JSON APIs, and supports various content types. Follows redirects automatically.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "The URL to fetch content from."
+            },
+            "headers": {
+              "type": "object",
+              "description": "Optional HTTP headers to include in the request.",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "max_length": {
+              "type": "integer",
+              "description": "Maximum content length in characters to return. Default: 50000."
+            }
+          },
+          "required": ["url"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "browser",
+        "description": "Control a headless browser for web automation, testing, and screenshots. Supports navigation, clicking, typing, taking screenshots, and extracting page content.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["navigate", "click", "type", "screenshot", "content", "evaluate", "wait"],
+              "description": "The browser action to perform."
+            },
+            "url": {
+              "type": "string",
+              "description": "URL to navigate to (for 'navigate' action)."
+            },
+            "selector": {
+              "type": "string",
+              "description": "CSS selector for the target element (for 'click', 'type' actions)."
+            },
+            "text": {
+              "type": "string",
+              "description": "Text to type (for 'type' action) or JavaScript to evaluate (for 'evaluate' action)."
+            },
+            "timeout": {
+              "type": "integer",
+              "description": "Action timeout in milliseconds. Default: 30000."
+            }
+          },
+          "required": ["action"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "agents_list",
+        "description": "List all currently running background agent sessions with their status, uptime, and resource usage.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "status_filter": {
+              "type": "string",
+              "enum": ["all", "running", "paused", "completed", "failed"],
+              "description": "Filter agents by status. Default: all."
+            },
+            "verbose": {
+              "type": "boolean",
+              "description": "Include detailed information like memory usage and last output. Default: false."
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sessions_list",
+        "description": "List all active terminal and agent sessions with their IDs, types, and current status.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "type_filter": {
+              "type": "string",
+              "enum": ["all", "terminal", "agent", "browser"],
+              "description": "Filter sessions by type. Default: all."
+            },
+            "include_completed": {
+              "type": "boolean",
+              "description": "Whether to include completed/terminated sessions. Default: false."
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sessions_history",
+        "description": "Retrieve command history and output from a specific session. Returns recent commands with their exit codes and output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "description": "The unique identifier of the session."
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum number of history entries to return. Default: 50."
+            },
+            "since": {
+              "type": "string",
+              "description": "ISO 8601 timestamp to retrieve history from. Only entries after this time are returned."
+            }
+          },
+          "required": ["session_id"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sessions_send",
+        "description": "Send input or commands to a running session. The input is written to the session's stdin as if typed by the user.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "description": "The unique identifier of the target session."
+            },
+            "input": {
+              "type": "string",
+              "description": "The text input to send to the session."
+            },
+            "press_enter": {
+              "type": "boolean",
+              "description": "Whether to append a newline after the input. Default: true."
+            }
+          },
+          "required": ["session_id", "input"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "sessions_spawn",
+        "description": "Spawn a new background terminal or agent session. Returns the session ID for subsequent interaction.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["terminal", "agent"],
+              "description": "The type of session to spawn."
+            },
+            "command": {
+              "type": "string",
+              "description": "Initial command to run in the session (for terminal type)."
+            },
+            "working_directory": {
+              "type": "string",
+              "description": "Working directory for the new session. Defaults to workspace root."
+            },
+            "name": {
+              "type": "string",
+              "description": "Optional human-readable name for the session."
+            }
+          },
+          "required": ["type"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "session_status",
+        "description": "Check the current status and recent output of a specific session.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "description": "The unique identifier of the session to check."
+            },
+            "include_output": {
+              "type": "boolean",
+              "description": "Whether to include recent output text. Default: true."
+            },
+            "output_lines": {
+              "type": "integer",
+              "description": "Number of recent output lines to include. Default: 50."
+            }
+          },
+          "required": ["session_id"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cron",
+        "description": "Schedule recurring tasks using cron-style expressions. Tasks run in the background and their output is logged.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["create", "list", "delete", "pause", "resume"],
+              "description": "The cron management action to perform."
+            },
+            "schedule": {
+              "type": "string",
+              "description": "Cron expression for the schedule (e.g., '*/5 * * * *' for every 5 minutes). Required for 'create'."
+            },
+            "command": {
+              "type": "string",
+              "description": "The command to execute on schedule. Required for 'create'."
+            },
+            "job_id": {
+              "type": "string",
+              "description": "Job identifier for delete/pause/resume actions."
+            },
+            "name": {
+              "type": "string",
+              "description": "Human-readable name for the cron job."
+            }
+          },
+          "required": ["action"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "message",
+        "description": "Send a message or notification to the user. Supports different urgency levels and can include structured data.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "string",
+              "description": "The message content to send to the user."
+            },
+            "level": {
+              "type": "string",
+              "enum": ["info", "warning", "error", "success"],
+              "description": "Message urgency level affecting display style. Default: info."
+            },
+            "title": {
+              "type": "string",
+              "description": "Optional title for the message notification."
+            }
+          },
+          "required": ["content"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "image",
+        "description": "Generate or analyze images using AI vision capabilities. Can create images from text descriptions or analyze existing images to extract information.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["generate", "analyze", "edit"],
+              "description": "The image operation to perform."
+            },
+            "prompt": {
+              "type": "string",
+              "description": "Text description for image generation or analysis question for existing images."
+            },
+            "path": {
+              "type": "string",
+              "description": "File path for the image to analyze or the output path for generated images."
+            },
+            "width": {
+              "type": "integer",
+              "description": "Desired image width in pixels. Default: 1024."
+            },
+            "height": {
+              "type": "integer",
+              "description": "Desired image height in pixels. Default: 1024."
+            }
+          },
+          "required": ["action"]
+        }
+      }
+    }
+  ]
+}

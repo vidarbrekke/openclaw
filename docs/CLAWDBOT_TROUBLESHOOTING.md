@@ -177,7 +177,63 @@ This is a documented issue with Kimi K2/K2.5 models when used through OpenRouter
 
 ---
 
-## 5. Useful paths and commands
+## 5. "Tool [name] not found" (read, exec, etc.)
+
+### Root cause
+The error `Tool read not found` or `Tool exec not found` comes from **pi-agent-core** when the agent tries to execute a tool call, but that tool is **not in the resolved tool set** passed to the agent loop. The model receives tool definitions (e.g. from the system prompt) and generates tool calls, but at execution time the gateway's tool registry doesn't include that tool.
+
+### When it happens
+- **web_search** works, but **read** and **exec** consistently fail with "Tool X not found"
+- Affects proxy sessions (`agent:main:proxy:uuid`), Control UI chat, or TUI
+
+### Likely causes
+
+1. **Agent routing / tool policy**  
+   The session uses an agent whose `tools.allow` list excludes `read` or `exec`. For example, `default_api` has `tools.deny: ["read"]` and `tools.allow: ["web_search","web_fetch","sessions_list","session_status","exec"]` — so `read` is denied for that agent. Verify which agent your session uses: `agent:main:proxy:uuid` → agent `main`; `agent:default_api:...` → agent `default_api`.
+
+2. **Session key not passed or wrong**  
+   The proxy must send `x-openclaw-session-key: agent:main:proxy:uuid` so the gateway resolves the `main` agent (full tools). If the header is missing or malformed, the gateway may fall back to an agent with restricted tools.
+
+3. **Exec allowlist / security**  
+   With `tools.exec.security: "allowlist"`, exec only runs allowlisted commands. That does **not** cause "Tool exec not found" — it would cause a different error when a command is rejected. "Tool exec not found" means the exec tool itself is missing from the tool set.
+
+### What to check
+
+1. **Confirm session key and agent**
+   ```bash
+   # In gateway logs or proxy logs, look for the session key used
+   openclaw logs --follow
+   ```
+   For proxy/Control UI sessions, you should see `agent:main:proxy:uuid` or similar.
+
+2. **Verify main agent config**
+   In `~/.openclaw/openclaw.json`, the `main` agent should have no `tools.deny` for read/exec:
+   ```json
+   "agents": {
+     "list": [
+       { "id": "main" }
+     ]
+   }
+   ```
+   If `main` has `tools.allow` or `tools.deny`, ensure `read` and `exec` are allowed.
+
+3. **Restart gateway and proxy**
+   ```bash
+   openclaw gateway   # or your usual start method
+   ./start-session-proxy.sh
+   ```
+
+4. **Try a fresh session**
+   Create a new session (e.g. open `http://127.0.0.1:3010/new` in a new tab) and test tool calls again.
+
+### If it persists
+- Check gateway logs for tool-resolution warnings
+- Run `openclaw doctor --fix`
+- Ensure no plugin or skill is overriding the agent's tool set
+
+---
+
+## 6. Useful paths and commands
 
 - **Config:** `~/.openclaw/openclaw.json` (or `~/.clawdbot/clawdbot.json` if symlinked)
 - **Device identity:** `~/.openclaw/identity/device.json`
@@ -195,7 +251,7 @@ This is a documented issue with Kimi K2/K2.5 models when used through OpenRouter
 
 ---
 
-## 6. Round-robin: responses disappear from chat UI
+## 7. Round-robin: responses disappear from chat UI
 
 ### Symptoms
 When using the session proxy with round-robin enabled, assistant replies vanish from the chat UI before they complete or immediately after completing.
@@ -215,3 +271,129 @@ Update to the latest clawd/openclaw-session-proxy.js and restart the proxy.
 1. **Verify Control UI fix:** Section 1 above — if replies don't show when state becomes "final", the Control UI may need the history-refresh patch. That can also affect round-robin sessions.
 2. **Try without round-robin:** Start the proxy with `ROUND_ROBIN_MODELS=off ./start-session-proxy.sh`. If responses appear, the issue is round-robin–specific; if not, it's the Control UI or gateway.
 3. **Check proxy logs:** `/tmp/openclaw-proxy.log` — look for `WebSocket upgrade -> session: ... path: /` to confirm path stripping.
+
+---
+
+## 8. Telegram: not receiving messages (channel not starting)
+
+### Root cause
+The OpenClaw config had no `channels.telegram` section. Without it, the gateway never starts the Telegram provider (which does long-polling via grammY `getUpdates`). There is no separate cron job or daemon—Telegram runs inside the gateway process.
+
+### Fix applied
+Added `channels.telegram` to `~/.openclaw/openclaw.json`:
+
+```json
+"channels": {
+  "telegram": {
+    "enabled": true,
+    "dmPolicy": "pairing"
+  }
+}
+```
+
+### Bot token required
+The Telegram channel only starts when a bot token is resolved. Add one of:
+
+1. **Environment variable** (recommended if you don't want the token in config):
+   ```bash
+   export TELEGRAM_BOT_TOKEN="123456:ABC-DEF..."
+   ```
+   Then start the gateway (e.g. `openclaw gateway`).
+
+2. **Config** (stored in openclaw.json):
+   ```json
+   "channels": {
+     "telegram": {
+       "enabled": true,
+       "botToken": "123456:ABC-DEF...",
+       "dmPolicy": "pairing"
+     }
+   }
+   ```
+
+### Restart required
+After changing config, restart the gateway:
+- If using LaunchAgent: `launchctl kickstart -k gui/$UID/ai.openclaw.gateway`
+- Or stop and start: `openclaw gateway`
+
+### Verify it's running
+- `openclaw logs --follow` — look for `[default] starting provider` or `[telegram]` entries.
+- Control UI → Channels tab — Telegram should show as started/connected.
+
+---
+
+## 9. Telegram: `setMyCommands failed: 400 Bad Request: BOT_COMMANDS_TOO_MUCH`
+
+### Root cause
+OpenClaw registers native slash commands (e.g. `/model`, `/round-robin`, skill commands) via `setMyCommands`. Skills add many commands; with many skills you can exceed the Telegram Bot API limit (100 commands per scope). Even after truncation to 100, some setups still get this error (possibly due to scope or payload limits).
+
+### Fix applied
+Disable skill commands for Telegram in `~/.openclaw/openclaw.json`:
+
+```json
+"channels": {
+  "telegram": {
+    "enabled": true,
+    ...
+    "commands": {
+      "nativeSkills": false
+    }
+  }
+}
+```
+
+This keeps core commands (`/model`, `/round-robin`, `/context`, etc.) but excludes skill-specific commands, typically reducing the count to ~20–40.
+
+### If error persists
+Use a more aggressive option to disable all native command registration:
+
+```json
+"channels": {
+  "telegram": {
+    "commands": {
+      "native": false
+    }
+  }
+}
+```
+
+This clears the Telegram command menu entirely. Slash commands still work when typed manually; they just won't appear in the menu.
+
+### Restart required
+Restart the gateway after config changes: `launchctl kickstart -k gui/$UID/ai.openclaw.gateway` or stop/start `openclaw gateway`.
+
+---
+
+## 10. Gateway startup: "blocked model (context window too small)" / FailoverError
+
+### Symptoms
+On gateway start you see:
+
+- `[agent/embedded] low context window: ollama/mistral-small-8k ctx=8192 (warn<32000)`
+- `[agent/embedded] blocked model (context window too small): ollama/mistral-small-8k ctx=8192 (min=16000)`
+- `[diagnostic] lane task error: lane=main ... error="FailoverError: Model context window too small (8192 tokens). Minimum is 16000."`
+- Same for `lane=session:agent:main:main`
+
+### Cause
+The OpenClaw gateway (npm package) enforces:
+
+- **Minimum context:** 16 000 tokens. Models below that are **blocked** for the main/session agent and are not used.
+- **Warning threshold:** 32 000 tokens. Models below that log a "low context window" warning but can still be used if they meet the minimum.
+
+`ollama/mistral-small-8k` has an 8192-token context window, so it is below both the minimum and the warning threshold. The gateway marks it as blocked; when the main agent (or a lane task) is configured or defaulted to that model, the run fails with `FailoverError`.
+
+### Fix (no code changes in clawd)
+This behavior is in the **openclaw** package (e.g. `dist/agents/model-catalog.js` or gateway model catalog), not in the clawd repo.
+
+1. **Use a model with ≥16k context for the main agent**
+   - In `~/.openclaw/openclaw.json`, set the default model to one with context ≥16k (e.g. another Ollama model, or an API model).
+   - Example: `agents.defaults.model` (or the equivalent in your config) to something like `ollama/mistral` (if that variant has 16k+), or `openrouter/...`, etc.
+2. **If using round-robin or session overrides**
+   - Ensure `ollama/mistral-small-8k` is not the only or first choice for the main agent, or remove it from the list so the gateway can pick an allowed model.
+3. **If you must use mistral-small-8k**
+   - You would need a change in the openclaw package (e.g. a configurable minimum context or an override to allow smaller models). That is outside this repo; consider opening an issue or PR on the OpenClaw upstream.
+
+### Summary
+- **Cause:** Gateway blocks models with context < 16k; mistral-small-8k has 8k.
+- **Change needed in clawd:** None.
+- **What to do:** Point the main agent (and session defaults) at a model with ≥16k context, or remove mistral-small-8k from the main/session model selection.

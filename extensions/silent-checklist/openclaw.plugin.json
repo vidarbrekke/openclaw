@@ -1,0 +1,21 @@
+{
+  "id": "silent-checklist",
+  "name": "Silent Checklist",
+  "description": "Prepends a silent preflight checklist instruction to the system prompt for all agent runs.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable or disable prompt injection."
+      },
+      "extraStructuredOutputGuard": {
+        "type": "boolean",
+        "default": false,
+        "description": "If true and the event indicates a structured stdout contract (json/jsonl), also inject a guard to emit only valid JSON/JSONL."
+      }
+    }
+  }
+}

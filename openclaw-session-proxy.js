@@ -39,6 +39,9 @@ const { createRoundRobinState, transformChatBody, processRoundRobinCommands, isR
 
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:18789";
 const PROXY_PORT = Number(process.env.PROXY_PORT || 3010);
+const TOOL_GATE_ENABLED = process.env.TOOL_GATE_ENABLED !== "0";
+const TOOL_GATE_MAX_RETRIES = Math.max(0, Number(process.env.TOOL_GATE_MAX_RETRIES || 1));
+const TOOL_GATE_ESCALATE_MODEL = process.env.TOOL_GATE_ESCALATE_MODEL || "";
 // Use gateway canonical format (agent:main:proxy:uuid) so chat "final" events match Control UI sessionKey
 const SESSION_PREFIX = process.env.SESSION_PREFIX || "agent:main:proxy:";
 
@@ -85,6 +88,59 @@ function shouldInjectSessionKey(method, path) {
 
 function isChatCompletions(method, path) {
   return method === "POST" && path.includes("/v1/chat/completions");
+}
+
+function isToolRequiredRequest(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  if (!Array.isArray(payload.tools) || payload.tools.length === 0) return false;
+  if (payload.tool_choice === "none") return false;
+  return true;
+}
+
+function hasValidToolCall(responseJson) {
+  const msg = responseJson?.choices?.[0]?.message;
+  return Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+}
+
+function buildToolRetryPrompt(payload) {
+  const toolSchemas = Array.isArray(payload?.tools) ? payload.tools : [];
+  return [
+    "Invalid previous output: tool call required but missing.",
+    "You MUST output ONLY a valid tool call object that matches one of the provided tool schemas.",
+    "Do not output prose. Do not describe the command. Emit only the tool call.",
+    `Available tools schema: ${JSON.stringify(toolSchemas)}`,
+  ].join("\n");
+}
+
+function performGatewayJsonRequest(proxyOptions, payloadObj) {
+  return new Promise((resolve, reject) => {
+    const body = Buffer.from(JSON.stringify(payloadObj));
+    const options = {
+      ...proxyOptions,
+      headers: {
+        ...proxyOptions.headers,
+        "content-type": "application/json",
+        "content-length": String(body.length),
+      },
+    };
+    const req2 = gatewayProtocol.request(options, (res2) => {
+      const chunks = [];
+      res2.on("data", (c) => chunks.push(c));
+      res2.on("end", () => {
+        const raw = Buffer.concat(chunks);
+        let json = null;
+        try {
+          json = JSON.parse(raw.toString("utf8"));
+        } catch {
+          json = null;
+        }
+        resolve({ statusCode: res2.statusCode || 502, headers: res2.headers || {}, raw, json });
+      });
+    });
+    req2.on("error", reject);
+    req2.write(body);
+    req2.end();
+  });
 }
 
 const roundRobinModels = process.env.ROUND_ROBIN_MODELS;
@@ -179,6 +235,7 @@ const server = http.createServer((req, res) => {
   }
 
   const useRoundRobin = roundRobinAvailable && isRoundRobinEnabled(roundRobinModels) && isChatCompletions(req.method, targetPath);
+  const isChatRequest = isChatCompletions(req.method, targetPath);
   if (useRoundRobin) {
     delete proxyHeaders["content-length"];
     delete proxyHeaders["transfer-encoding"];
@@ -191,6 +248,85 @@ const server = http.createServer((req, res) => {
     method: req.method,
     headers: proxyHeaders,
   };
+
+  if (isChatRequest) {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", async () => {
+      let parsed = {};
+      try {
+        parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      } catch {
+        parsed = {};
+      }
+
+      if (useRoundRobin) {
+        const sk = sessionKey || "default";
+        const getSession = () => getSessionRoundRobin(sk);
+        const setSession = (s) => setSessionRoundRobin(sk, s);
+        const { applyRoundRobin } = processRoundRobinCommands(parsed, getSession, setSession);
+        const modifiedBody = Buffer.from(JSON.stringify(parsed));
+        const sessionState = getSession();
+        const perSessionState = {
+          index: sessionState.index ?? 0,
+          turnsUsed: sessionState.turnsUsed ?? 0,
+          getModels: roundRobinState.getModels,
+        };
+        const transformed = transformChatBody(perSessionState, modifiedBody, { applyRoundRobin });
+        setSession({ ...sessionState, index: perSessionState.index, turnsUsed: perSessionState.turnsUsed });
+        parsed = JSON.parse(transformed.body.toString("utf8"));
+        if (applyRoundRobin && transformed.model) console.log(`[proxy] round-robin [${sk}] -> ${transformed.model}`);
+        else if (!applyRoundRobin) console.log(`[proxy] bypass (explicit model)`);
+      }
+
+      const toolGateActive =
+        TOOL_GATE_ENABLED &&
+        parsed?.stream !== true &&
+        isToolRequiredRequest(parsed);
+
+      try {
+        let result = await performGatewayJsonRequest(proxyOptions, parsed);
+        if (toolGateActive && result.json && !hasValidToolCall(result.json)) {
+          let retryPayload = {
+            ...parsed,
+            messages: [
+              ...(Array.isArray(parsed.messages) ? parsed.messages : []),
+              { role: "system", content: buildToolRetryPrompt(parsed) },
+            ],
+          };
+          console.log(`[proxy] tool-gate retry: missing tool_calls for session ${sessionKey || "default"}`);
+          for (let i = 0; i < TOOL_GATE_MAX_RETRIES; i++) {
+            const retried = await performGatewayJsonRequest(proxyOptions, retryPayload);
+            result = retried;
+            if (result.json && hasValidToolCall(result.json)) break;
+          }
+          if (
+            TOOL_GATE_ESCALATE_MODEL &&
+            result.json &&
+            !hasValidToolCall(result.json) &&
+            parsed.model !== TOOL_GATE_ESCALATE_MODEL
+          ) {
+            console.log(`[proxy] tool-gate escalate model -> ${TOOL_GATE_ESCALATE_MODEL}`);
+            const escalated = { ...retryPayload, model: TOOL_GATE_ESCALATE_MODEL };
+            result = await performGatewayJsonRequest(proxyOptions, escalated);
+          }
+        }
+
+        const headers = { ...result.headers };
+        if (!headers["content-type"]) headers["content-type"] = "application/json";
+        headers["content-length"] = String(result.raw.length);
+        res.writeHead(result.statusCode, headers);
+        res.end(result.raw);
+      } catch (err) {
+        console.error(`[proxy] Error proxying ${req.method} ${targetPath}:`, err.message);
+        if (!res.headersSent) {
+          res.writeHead(502, { "Content-Type": "text/plain" });
+          res.end(`Proxy error: ${err.message}`);
+        }
+      }
+    });
+    return;
+  }
 
   const proxyReq = gatewayProtocol.request(proxyOptions, (proxyRes) => {
     const responseHeaders = { ...proxyRes.headers };

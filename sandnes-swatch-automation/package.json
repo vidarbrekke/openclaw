@@ -1,0 +1,27 @@
+{
+  "name": "sandnes-swatch-automation",
+  "version": "1.0.0",
+  "description": "Sandnes Garn swatch image automation pipeline",
+  "main": "src/automate-swatch-final.js",
+  "scripts": {
+    "test": "node test/smoke.js",
+    "smoke": "node test/smoke.js",
+    "backup": "scripts/backup-state.sh",
+    "wholesale": "./run-swatch.sh wholesale",
+    "prod": "./run-swatch.sh prod",
+    "dry-run": "./run-swatch.sh wholesale --dry-run"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "woocommerce",
+    "sharepoint",
+    "swatch",
+    "automation",
+    "sandnes-garn"
+  ],
+  "author": "Vidar Brekke",
+  "license": "MIT",
+  "dependencies": {}
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@clawd/silent-checklist",
+  "version": "1.0.0",
+  "description": "OpenClaw plugin: prepend silent preflight checklist to system prompt",
+  "type": "module",
+  "main": "index.mjs",
+  "openclaw": {
+    "extensions": ["./index.mjs"]
+  }
+}

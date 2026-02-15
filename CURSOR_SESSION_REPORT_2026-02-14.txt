@@ -1,0 +1,146 @@
+CHANGES MADE BY CURSOR SESSION (2026-02-14)
+============================================
+
+WHO: Cursor IDE assistant (not ClawBot), working at Vidar's request.
+
+PURPOSE: Sanity-check the documentation set, fix bugs found, and remove
+stale/incorrect references across all docs.
+
+
+1. BUG FIX: scripts/openclaw-cookie-header-from-json.sh
+---------------------------------------------------------
+
+WHAT: Fixed a process.argv off-by-one bug that caused the script to crash.
+
+ROOT CAUSE: When Node.js runs with `node -e "script"`, process.argv has
+no script filename entry. argv is [node, arg1, arg2, ...] not
+[node, scriptname, arg1, arg2, ...]. The script used argv[2]-[5]
+but should have used argv[1]-[4].
+
+FIX: Changed indices from [2],[3],[4],[5] to [1],[2],[3],[4] in the
+embedded Node script.
+
+VERIFIED: All three modes now work:
+  - --stdin with --domain filter
+  - --stdin with --domain and --raw
+  - --input with file path and --domain
+
+IMPACT: You can now use the script directly instead of inline Node
+one-liners. All docs have been updated to reflect this.
+
+
+2. UPDATED: SWATCH_README.md
+------------------------------
+
+CHANGES:
+- Line 45: Removed "(HAS BUG, use Node one-liner)" from cookie script
+  description. Now reads: "Convert browser cookies JSON to Cookie header string"
+- Quick Start section: Replaced reference to non-existent
+  ./automate-swatch-download.sh with a TODO note pointing to
+  SWATCH_AUTOMATION_MASTER.md sections 2.4-2.7.
+
+WHY: The bug is fixed. The wrapper script doesn't exist yet.
+
+
+3. UPDATED: SWATCH_AUTOMATION_MASTER.md
+-----------------------------------------
+
+CHANGES:
+- Section 2.5 (Download from SharePoint): Replaced inline Node one-liner
+  for cookie building with the now-fixed helper script:
+  ./scripts/openclaw-cookie-header-from-json.sh --input ... --domain ... --raw
+
+- Section 5.1 (Download Job): Fixed --cookie-header example value.
+  Was: --cookie-header "Cookie: name=value; ..."
+  Now: --cookie-header "name=value; name2=value2"
+  The Cookie: HTTP header name is added by curl's -H flag. Including it
+  in the value would cause a double-prefix ("Cookie: Cookie: ...").
+
+- Section 7.1 (Known Issues): Changed from "Cookie Header Script Bug"
+  with workaround to "Cookie Header Script (Fixed)" with correct usage
+  examples showing both --stdin and --input modes.
+
+- Section 9 (Production Execution): Replaced references to five non-existent
+  wrapper scripts with real inline commands from sections 2.1-2.8, plus a
+  clear TODO note that automate-swatch-download.sh needs to be created.
+
+WHY: Accuracy. Stale bug warnings, wrong examples, and phantom script
+references would confuse future automation runs.
+
+
+4. UPDATED: MEMORY.md
+-----------------------
+
+CHANGES:
+- Implementation section: Replaced inline Node one-liner with the
+  now-fixed helper script path.
+- Known Constraints: Changed "Cookie header script has arg parsing bug
+  (use Node one-liner instead)" to "Cookie header script arg parsing bug
+  was fixed (2026-02-14). Use it directly now."
+
+WHY: MEMORY.md survives context resets. Stale bug warnings here would
+cause ClawBot to avoid using a working script indefinitely.
+
+
+5. UPDATED: QUICK_REF_SWATCH.md
+---------------------------------
+
+CHANGES:
+- Section 3 (Export Cookies): Replaced multi-line inline Node one-liner
+  with single-line pipe through the fixed helper script.
+
+WHY: Simpler, less error-prone, and consistent with all other docs.
+
+
+6. NO CHANGES NEEDED: OpenClaw Skills
+---------------------------------------
+
+Both skill files were already correct:
+- ~/.openclaw/skills/playwright-mcp/SKILL.md -- no stale bug references
+- ~/.openclaw/skills/browser/SKILL.md -- no stale bug references
+
+These were rewritten earlier in this same session and remain accurate.
+
+
+7. NO CHANGES NEEDED: Helper Scripts (download-job, download-job-status)
+-------------------------------------------------------------------------
+
+Both scripts were tested and working. No changes required.
+
+
+SUMMARY OF ALL FILES MODIFIED
+===============================
+
+Scripts (bug fix):
+  scripts/openclaw-cookie-header-from-json.sh  -- argv index fix
+
+Documentation (consistency fixes):
+  SWATCH_README.md                -- removed bug warning, fixed phantom script ref
+  SWATCH_AUTOMATION_MASTER.md     -- fixed cookie examples, section 7.1, section 9
+  MEMORY.md                       -- updated cookie script status, usage example
+  QUICK_REF_SWATCH.md             -- simplified cookie export command
+
+
+ACTION ITEMS FOR CLAWBOT
+=========================
+
+None required. All changes are backward-compatible.
+
+However, be aware of these behavioral changes:
+
+1. USE THE HELPER SCRIPT for cookie headers now. It works.
+
+   openclaw browser --json cookies --browser-profile openclaw --target-id <id> | \
+     ./scripts/openclaw-cookie-header-from-json.sh --stdin --domain sharepoint.com --raw
+
+   You no longer need the inline Node one-liner workaround.
+
+2. AUTOMATION WRAPPER SCRIPTS do not exist yet. The following are referenced
+   in docs but need to be created before they can be used:
+   - automate-swatch-download.sh
+   Until created, follow SWATCH_AUTOMATION_MASTER.md sections 2.4-2.7 manually
+   (step by step per SKU).
+
+3. COOKIE HEADER FORMAT: When passing to openclaw-download-job.sh, pass only
+   the cookie value string ("name=value; name2=value2"), NOT the HTTP header
+   name ("Cookie: name=value"). The -H flag in curl adds the header name.

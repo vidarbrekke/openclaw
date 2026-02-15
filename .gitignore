@@ -4,3 +4,8 @@ node_modules/
 *.log
 .DS_Store
 test-results/
+
+# Sandnes swatch automation data (CSVs, logs, run artifacts)
+sandnes-swatch-automation/data/*.csv
+sandnes-swatch-automation/data/*.json
+sandnes-swatch-automation/data/*.log

@@ -12,6 +12,9 @@
 #   - Cron jobs with sessionTarget:main use agent:main:main
 #   - Telegram credentials live in openclaw.json, NOT in the session
 #
+# Agents: processes all agents/*/sessions/sessions.json (main, default_api, etc.)
+# Other agents (e.g. default_api) have no heartbeat/Telegram — all their sessions are safe to clean.
+#
 # Two eval modes:
 #   SMART=1 — Ollama evaluates whether sessions look abandoned (zero external tokens)
 #   SMART=0 — (default) pure time-based staleness
@@ -35,7 +38,6 @@
 set -e
 
 export OPENCLAW_DIR="${OPENCLAW_DIR:-$HOME/.openclaw}"
-export SESSIONS_JSON="${OPENCLAW_DIR}/agents/main/sessions/sessions.json"
 export SESSION_PREFIX="${SESSION_PREFIX:-agent:main:proxy:}"
 export PROTECTED_KEYS="${PROTECTED_KEYS:-agent:main:main}"
 export ALL="${ALL:-0}"
@@ -44,8 +46,6 @@ export SMART="${SMART:-0}"
 export DRY_RUN="${DRY_RUN:-0}"
 export OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
 export OLLAMA_MODEL="${OLLAMA_MODEL:-}"
-
-[ ! -f "$SESSIONS_JSON" ] && exit 0
 
 # If OLLAMA_MODEL isn't set, pick the most recently updated Ollama model.
 # Use || true so failure (Ollama down) doesn't abort the script with set -e.
@@ -93,7 +93,8 @@ const fs = require("fs");
 const http = require("http");
 const { URL } = require("url");
 
-const { SESSIONS_JSON, SESSION_PREFIX, PROTECTED_KEYS, ALL, STALE_MS, SMART, DRY_RUN, OLLAMA_URL, OLLAMA_MODEL } = process.env;
+const path = require("path");
+const { OPENCLAW_DIR, SESSION_PREFIX, PROTECTED_KEYS, ALL, STALE_MS, SMART, DRY_RUN, OLLAMA_URL, OLLAMA_MODEL } = process.env;
 const staleMs     = parseInt(STALE_MS, 10);
 const smart       = SMART === "1";
 const dryRun      = DRY_RUN === "1";
@@ -102,28 +103,37 @@ const now         = Date.now();
 
 const protectedSet = new Set((PROTECTED_KEYS || "agent:main:main").split(",").map((k) => k.trim()).filter(Boolean));
 
-let data;
-try { data = JSON.parse(fs.readFileSync(SESSIONS_JSON, "utf8")); }
-catch (_) { process.exit(0); }
-
-// ── Collect stale candidates ────────────────────────────────────────────────
-// Protected sessions (e.g. agent:main:main for heartbeat/Telegram) are never touched.
-const candidates = [];
-for (const key of Object.keys(data)) {
-  if (protectedSet.has(key)) continue;
-  if (!cleanAll && !key.startsWith(SESSION_PREFIX)) continue;
-  const entry = data[key];
-  const updatedAt = entry?.updatedAt;
-  if (updatedAt == null || (now - updatedAt) < staleMs) continue;
-  candidates.push({ key, entry, ageMs: now - updatedAt });
-}
-if (candidates.length === 0) process.exit(0);
+// Discover all agents/*/sessions/sessions.json
+const agentsDir = path.join(OPENCLAW_DIR || path.join(process.env.HOME, ".openclaw"), "agents");
+const sessionFiles = [];
+try {
+  const agents = fs.readdirSync(agentsDir, { withFileTypes: true });
+  for (const a of agents) {
+    if (!a.isDirectory()) continue;
+    const p = path.join(agentsDir, a.name, "sessions", "sessions.json");
+    if (fs.existsSync(p)) sessionFiles.push(p);
+  }
+} catch (_) {}
+if (sessionFiles.length === 0) process.exit(0);
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function fmtAge(ms) {
   const h = Math.floor(ms / 3600000);
   const m = Math.floor((ms % 3600000) / 60000);
   return h > 0 ? h + "h" + m + "m" : m + "m";
+}
+
+function collectCandidates(data) {
+  const list = [];
+  for (const key of Object.keys(data)) {
+    if (protectedSet.has(key)) continue;
+    if (!cleanAll && !key.startsWith(SESSION_PREFIX)) continue;
+    const entry = data[key];
+    const updatedAt = entry?.updatedAt;
+    if (updatedAt == null || (now - updatedAt) < staleMs) continue;
+    list.push({ key, entry, ageMs: now - updatedAt });
+  }
+  return list;
 }
 
 function readLastMessages(filePath, n) {
@@ -152,7 +162,7 @@ function readLastMessages(filePath, n) {
 }
 
 // ── Ollama smart evaluation (single batch call, zero external tokens) ───────
-async function smartEval() {
+async function smartEval(candidates) {
   const summaries = candidates.map((c, i) =>
     (i + 1) + ". key=" + c.key + " age=" + fmtAge(c.ageMs) +
     " messages=\"" + readLastMessages(c.entry?.sessionFile, 10) + "\""
@@ -238,7 +248,7 @@ async function smartEval() {
 }
 
 // ── Delete a single session ─────────────────────────────────────────────────
-function deleteSession(key, entry) {
+function deleteSession(key, entry, data) {
   const sf = entry?.sessionFile;
   if (sf && typeof sf === "string") {
     try {
@@ -252,14 +262,20 @@ function deleteSession(key, entry) {
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
-async function main() {
+async function processFile(SESSIONS_JSON) {
+  let data;
+  try { data = JSON.parse(fs.readFileSync(SESSIONS_JSON, "utf8")); }
+  catch (_) { return { deleted: 0, kept: 0 }; }
+
+  const candidates = collectCandidates(data);
+  if (candidates.length === 0) return { deleted: 0, kept: 0 };
+
   let toDelete = [];
   let kept = 0;
 
   if (smart) {
-    const decisions = await smartEval();
+    const decisions = await smartEval(candidates);
     if (decisions && Array.isArray(decisions) && decisions.length > 0) {
-      // Build a set of decided indices; unmentioned candidates default to DELETE
       const keepSet = new Set();
       for (const d of decisions) {
         const idx = (d.index || 0) - 1;
@@ -276,7 +292,6 @@ async function main() {
         }
       }
     } else {
-      // Ollama failed — fall back to delete all stale
       toDelete = candidates;
       if (dryRun) {
         console.log("[dry-run] Ollama unavailable — falling back to time-based");
@@ -290,15 +305,28 @@ async function main() {
     }
   }
 
-  for (const c of toDelete) deleteSession(c.key, c.entry);
+  for (const c of toDelete) deleteSession(c.key, c.entry, data);
 
   if (!dryRun && toDelete.length > 0) {
     fs.writeFileSync(SESSIONS_JSON, JSON.stringify(data, null, 2), "utf8");
   }
 
+  return { deleted: toDelete.length, kept };
+}
+
+async function main() {
+  let totalDeleted = 0;
+  let totalKept = 0;
+
+  for (const SESSIONS_JSON of sessionFiles) {
+    const { deleted, kept } = await processFile(SESSIONS_JSON);
+    totalDeleted += deleted;
+    totalKept += kept;
+  }
+
   const mode = smart ? "smart (ollama)" : "time-based";
-  if (toDelete.length > 0 || kept > 0) {
-    console.log("cleanup-proxy-sessions [" + mode + "]: deleted " + toDelete.length + ", kept " + kept + " (of " + candidates.length + " stale)");
+  if (totalDeleted > 0 || totalKept > 0) {
+    console.log("cleanup-proxy-sessions [" + mode + "]: deleted " + totalDeleted + ", kept " + totalKept);
   }
 }
 
