@@ -1,0 +1,17 @@
+# Environment
+.env
+
+# Data files (contain server-specific info)
+data/*.csv
+data/*.json
+data/*.log
+
+# Temp downloads
+downloads/
+tmp/
+
+# Node modules (if any added later)
+node_modules/
+
+# OS files
+.DS_Store
