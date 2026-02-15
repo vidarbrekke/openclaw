@@ -1,7 +1,7 @@
 {
   "name": "sandnes-swatch-automation",
-  "version": "1.0.0",
-  "description": "Sandnes Garn swatch image automation pipeline",
+  "version": "1.1.0",
+  "description": "Sandnes Garn swatch image automation - download from SharePoint, process, upload to WooCommerce",
   "main": "src/automate-swatch-final.js",
   "scripts": {
     "test": "node test/smoke.js",
@@ -9,7 +9,14 @@
     "backup": "scripts/backup-state.sh",
     "wholesale": "./run-swatch.sh wholesale",
     "prod": "./run-swatch.sh prod",
-    "dry-run": "./run-swatch.sh wholesale --dry-run"
+    "wholesale:dry": "./run-swatch.sh wholesale --dry-run",
+    "prod:dry": "./run-swatch.sh prod --dry-run",
+    "wholesale:verbose": "./run-swatch.sh wholesale --verbose",
+    "prod:verbose": "./run-swatch.sh prod --verbose",
+    "validate": "npm test && echo '✓ All validations passed'",
+    "clean": "rm -f /tmp/openclaw/downloads/*.jpg /tmp/openclaw/downloads/*.webp /tmp/openclaw/jobs/*.json 2>/dev/null; echo '✓ Cleaned temp files'",
+    "log:view": "ls -lt data/swatch_run_*.json 2>/dev/null | head -5 || echo 'No run logs found'",
+    "version": "echo 'v1.1.0 - Multi-subfolder support with bulletproof safety'"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -19,9 +26,17 @@
     "sharepoint",
     "swatch",
     "automation",
-    "sandnes-garn"
+    "sandnes-garn",
+    "mcp"
   ],
   "author": "Vidar Brekke",
   "license": "MIT",
-  "dependencies": {}
+  "dependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vidarbrekke/sandnes-swatch-automation.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vidarbrekke/sandnes-swatch-automation/issues"
+  }
 }

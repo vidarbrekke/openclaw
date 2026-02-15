@@ -1,0 +1,356 @@
+{
+  "ok": true,
+  "targetId": "B4E29EE084B4CA66434CD2A8B5BF1AB3",
+  "cookies": [
+    {
+      "name": "_octo",
+      "value": "GH1.1.743933061.1770768153",
+      "domain": ".github.com",
+      "path": "/",
+      "expires": 1802304153.311979,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "logged_in",
+      "value": "no",
+      "domain": ".github.com",
+      "path": "/",
+      "expires": 1802304153.313168,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_device_id",
+      "value": "86833f4c717655e3938c1dcddfd0223a",
+      "domain": "github.com",
+      "path": "/",
+      "expires": 1802304169.189327,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__Host-GAPS",
+      "value": "1:xJCCUHH4kpgECXP7nT20mXsUZM0BtQ:0yzTMkTCWSZVvUJI",
+      "domain": "accounts.google.com",
+      "path": "/",
+      "expires": 1805328861.465935,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "OTZ",
+      "value": "8474414_76_76_104100_72_446760",
+      "domain": "accounts.google.com",
+      "path": "/",
+      "expires": 1773360862,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "MC1",
+      "value": "GUID=46217aa8e581420ea9ccaa3c70622c7b&HASH=4621&LV=202602&V=4&LU=1771008670024",
+      "domain": ".microsoft.com",
+      "path": "/",
+      "expires": 1802544670.773921,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "MSFPC",
+      "value": "GUID=46217aa8e581420ea9ccaa3c70622c7b&HASH=4621&LV=202602&V=4&LU=1771008670024",
+      "domain": "sandnesgarn.sharepoint.com",
+      "path": "/",
+      "expires": 1802544670.774407,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "tk_or",
+      "value": "%22%22",
+      "domain": ".motherknitter.com",
+      "path": "/",
+      "expires": 1805672737.611551,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "tk_r3d",
+      "value": "%22%22",
+      "domain": ".motherknitter.com",
+      "path": "/",
+      "expires": 1771371937,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "tk_lr",
+      "value": "%22%22",
+      "domain": ".motherknitter.com",
+      "path": "/",
+      "expires": 1802648737,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "tk_ai",
+      "value": "wmD5IF+7/ZkWjv0MJ4Yq8TnJ",
+      "domain": "motherknitter.com",
+      "path": "/",
+      "expires": 1802546655,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Strict"
+    },
+    {
+      "name": "_ga",
+      "value": "GA1.1.1881115226.1771010656",
+      "domain": ".motherknitter.com",
+      "path": "/",
+      "expires": 1805683767.958881,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_gcl_au",
+      "value": "1.1.731627355.1771010656",
+      "domain": ".motherknitter.com",
+      "path": "/",
+      "expires": 1778786656,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "IDE",
+      "value": "AHWqTUkAZKfrjm8KqTis7d-gk7UvT2gXyqkVka9OMMOtVaxpDP6rLEcYDDchLvBr",
+      "domain": ".doubleclick.net",
+      "path": "/",
+      "expires": 1805570662.786156,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "cookieConsentPrefs",
+      "value": "{%22cg_essential%22:1%2C%22cg_analytical%22:1%2C%22cg_marketing%22:1%2C%22expire%22:182%2C%22secure%22:1}",
+      "domain": ".www.sandnesgarn.no",
+      "path": "/",
+      "expires": 1786732411,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_gcl_au",
+      "value": "1.1.1759531805.1771011215",
+      "domain": ".sandnesgarn.no",
+      "path": "/",
+      "expires": 1778787215,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_ga",
+      "value": "GA1.1.2124020375.1771011215",
+      "domain": ".sandnesgarn.no",
+      "path": "/",
+      "expires": 1805673049.887762,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_fbp",
+      "value": "fb.1.1771011215417.73566279140782356",
+      "domain": ".sandnesgarn.no",
+      "path": "/",
+      "expires": 1778889049,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_hjSessionUser_118458",
+      "value": "eyJpZCI6IjlhYWI0ZDNiLWZhNTItNWMwMS05MTM1LWVjNTU0NGNlYzY0YSIsImNyZWF0ZWQiOjE3NzEwMTEyMTU0NTUsImV4aXN0aW5nIjp0cnVlfQ==",
+      "domain": ".sandnesgarn.no",
+      "path": "/",
+      "expires": 1802649049,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "OTZ",
+      "value": "8478459_76_76_104100_72_446760",
+      "domain": "ogs.google.com",
+      "path": "/",
+      "expires": 1773603563,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "ScaleCompatibilityDeviceId",
+      "value": "27134d10-a585-4730-94ee-967c49a323a2",
+      "domain": "sandnesgarn.sharepoint.com",
+      "path": "/",
+      "expires": 1771698507.766636,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "buid",
+      "value": "1.AS8AxdqZFFaZE0CoOftyPJrv2wMAAAAAAPEPzgAAAAAAAAAAAAAvAA.AQABGgEAAACvnsHKEvvRQb3Bz3Qc7wnaRXZvU3RzQXJ0aWZhY3RzAwAAAAAAbOVaaMbk_PH4skwotdyhvWG4mvzJiRv6PFj7fgiX-_rFKTBBI49Z9XpbJFgsKNBWOZRndEWqh_Ow4LwK9T4Nv15294xAGgWqUJOMF9FC4ZIgAA",
+      "domain": "login.microsoftonline.com",
+      "path": "/",
+      "expires": 1773687151.783447,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "fpc",
+      "value": "AtoorlDsfblKoCgp_0kzJJO4mAUtAQAAAG-7IuEOAAAA",
+      "domain": "login.microsoftonline.com",
+      "path": "/",
+      "expires": 1773687152.713865,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "brcap",
+      "value": "0",
+      "domain": ".login.microsoftonline.com",
+      "path": "/",
+      "expires": 1804791151,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "fpc",
+      "value": "ApBWC0d84F1MhNKmme6JdUQ",
+      "domain": "autologon.microsoftazuread-sso.com",
+      "path": "/",
+      "expires": 1773687152.497822,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "MicrosoftApplicationsTelemetryDeviceId",
+      "value": "42a7d7f5-fe52-4c10-a21c-6008e9b84baf",
+      "domain": "sandnesgarn.sharepoint.com",
+      "path": "/",
+      "expires": 1802728540.453601,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "form_key",
+      "value": "r6KqKHaXcOtnT8v0",
+      "domain": "www.sandnesgarn.no",
+      "path": "/",
+      "expires": 1771199442,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_ga_16LBWL01EL",
+      "value": "GS2.1.s1771113043$o2$g1$t1771113103$j60$l0$h0",
+      "domain": ".sandnesgarn.no",
+      "path": "/",
+      "expires": 1805673103.958959,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_ga_GPN8QGDTV4",
+      "value": "GS2.1.s1771123762$o4$g1$t1771123984$j60$l0$h1037062927",
+      "domain": ".motherknitter.com",
+      "path": "/",
+      "expires": 1805683984.260625,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "FedAuth",
+      "value": "77u/PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz48U1A+VjE0LDBoLmZ8bWVtYmVyc2hpcHx1cm4lM2FzcG8lM2F0ZW5hbnRhbm9uIzE0OTlkYWM1LTk5NTYtNDAxMy1hODM5LWZiNzIzYzlhZWZkYiwwIy5mfG1lbWJlcnNoaXB8dXJuJTNhc3BvJTNhdGVuYW50YW5vbiMxNDk5ZGFjNS05OTU2LTQwMTMtYTgzOS1mYjcyM2M5YWVmZGIsMTM0MTU2Mzc5NTQwMDAwMDAwLDAsMTM0MTU3MjQwNTUwOTIzODY2LDAuMC4wLjAsMjU4LDE0OTlkYWM1LTk5NTYtNDAxMy1hODM5LWZiNzIzYzlhZWZkYiwsLDc4M2NmN2ExLTUwZDctZTAwMC00M2E4LWFiMjE3NTJhMjVjNCw3ODNjZjdhMS01MGQ3LWUwMDAtNDNhOC1hYjIxNzUyYTI1YzQsTE5sNlF2bUdIa2VlYkhVRVR4Y01kZywwLDAsMCwsLCwyNjUwNDY3NzQzOTk5OTk5OTk5LDAsLCwsLCwsMCwsMjA1MzQ5LG9TUDBmbjV3WU5KYjlJOXAzM2dKMVhsY2JLNCwsQ3FJUjY1WmlYR0lKK0FMTmtVWUwzUkUxV0J5eHBKVzhSNjlockhvUVBBNFMwWDl6Ym9zTHdZTm9iUWhTTjlaZzN1VXRrRUdaV29yWUxtN2VXNzc5V2hRZlJsTnQwQW9kSVNKTkR6bHo4ZWI1bkRzT0NDVU5qTVlRSXZrd3oyajR6VnZOOTBsaXMwM29jT0twSStDT0o4cUpmRWZON05uMFNDdUlMeEE1QlNwZG9pdFNxUWpVWTkyWVIxZEdaQ1NPTXBwN055ZDNWcHZaR1RVRDJ1S3MrSzRhUllVcHcrK3kzcDJXamZtUHA0VXNZM1hzNzdhWGFWUEpPZkZwT3hka0E3L2VnVWtnZzQ4bU9RVnVJcW1IU2padUMyRXBHQ2x3SitNdGNMVUNLbWZxaUZaSUp5MFRWMEFjdHFZMXFBNHdUMk9sQmdVTDlkUld4Rkh6MHdJTXlRPT08L1NQPg==",
+      "domain": "sandnesgarn.sharepoint.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "FeatureOverrides_experiments",
+      "value": "[]",
+      "domain": "sandnesgarn.sharepoint.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "WSS_FullScreenMode",
+      "value": "false",
+      "domain": "sandnesgarn.sharepoint.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "NID",
+      "value": "529=prKSUkyVRAYfGj4V8FWvfhGIk5Jo_DWNvUNx5WCleqwTCl1cDdWF46P4Bv9eqg5ctI3tI1qhrK44CeZER_vsvqeKK4NEALwgwC9j_qfrJR3RDLG0mOhwQdYjj8Pn7exOIPyd7riTfbJotJ0rm7C0uO3_LXWqcKpnOnghYoSeSdtbSjTTVEoaqFclyiqBWClfAOEhxOfQZShT6mXfrosd",
+      "domain": ".google.com",
+      "path": "/",
+      "expires": 1786923927.898608,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "ai_session",
+      "value": "AE4VDdu7Ie7bkTjdTvRYUU|1771192540454|1771192540457",
+      "domain": "sandnesgarn.sharepoint.com",
+      "path": "/",
+      "expires": 1771194340,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "MS0",
+      "value": "d0577d5f01e74479afaf0e8f0cbb2ba0",
+      "domain": ".microsoft.com",
+      "path": "/",
+      "expires": 1771194344.81103,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "None"
+    }
+  ]
+}

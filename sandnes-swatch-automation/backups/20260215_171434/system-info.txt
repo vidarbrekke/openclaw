@@ -1,0 +1,5 @@
+Date: Sun Feb 15 17:14:34 EST 2026
+User: vidarbrekke
+Host: Mac.fios-router.home
+Node: v25.5.0
+ImageMagick: Version: ImageMagick 7.1.2-13 Q16-HDRI aarch64 23522 https://imagemagick.org

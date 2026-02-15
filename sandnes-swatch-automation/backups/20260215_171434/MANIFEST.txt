@@ -1,0 +1,18 @@
+Backup: 20260215_171434
+Created: Sun Feb 15 17:14:34 EST 2026
+Description: none
+
+Contents:
+total 136
+drwxr-xr-x@ 12 vidarbrekke  staff    384 Feb 15 17:14 .
+drwxr-xr-x@  4 vidarbrekke  staff    128 Feb 15 17:14 ..
+-rw-r--r--@  1 vidarbrekke  staff    485 Feb 15 17:14 .env.example
+-rw-r--r--@  1 vidarbrekke  staff    455 Feb 15 17:14 .env.keys
+-rw-r--r--@  1 vidarbrekke  staff     91 Feb 15 17:14 MANIFEST.txt
+-rwxr-xr-x@  1 vidarbrekke  staff  21818 Feb 15 17:14 automate-swatch-final.js
+-rw-r--r--@  1 vidarbrekke  staff   1446 Feb 15 17:14 cookie-header.txt
+-rw-r--r--@  1 vidarbrekke  staff  10485 Feb 15 17:14 cookies.json
+-rw-r--r--@  1 vidarbrekke  staff     18 Feb 15 17:14 git-commit.txt
+-rw-r--r--@  1 vidarbrekke  staff      0 Feb 15 17:14 missing_swatches_prod.csv
+-rw-r--r--@  1 vidarbrekke  staff   5651 Feb 15 17:14 missing_swatches_wholesale.csv
+-rw-r--r--@  1 vidarbrekke  staff    184 Feb 15 17:14 system-info.txt
