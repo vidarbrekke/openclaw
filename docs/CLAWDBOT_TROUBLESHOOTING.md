@@ -25,7 +25,7 @@ With OpenClaw 2026.2.17 the read-tool `file_path`→`path` fix should be in plac
 
 ---
 
-## Operator runbook (strict + phased mode)
+## Operator runbook (policy-only mode + emergency rollback)
 
 Use this when the cloud bot appears slow, stuck, or disconnected.
 
@@ -368,10 +368,10 @@ The Control UI connects to the gateway over WebSocket and must send the gateway 
 https://YOUR-DASHBOARD-HOST/?token=YOUR_GATEWAY_TOKEN
 ```
 
-Example (Tailscale):
+Example (Tailscale, dummy token):
 
 ```
-https://localhost-0.tail590941.ts.net/?token=d3b8f9c2e7a1b4c5d6e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0
+https://localhost-0.tail590941.ts.net/?token=oc_demo_token_replace_me_0123456789abcdef
 ```
 
 You can also add `?token=...` to any path (e.g. `/config?token=...`). After the first successful load, the UI often stores the token (e.g. in localStorage), so you may not need it in the URL on later visits.

@@ -40,5 +40,5 @@ Do not restart the gateway for these changes. Do not change model or fallbacks u
 Do not run service-control commands from chat/agent exec (for example: `openclaw gateway restart`, `systemctl --user restart openclaw-gateway.service`).
 
 If you need incident response steps, follow the operator runbook in:
-`docs/CLAWDBOT_TROUBLESHOOTING.md` (section: Operator runbook (strict + phased mode)).
+`docs/CLAWDBOT_TROUBLESHOOTING.md` (section: Operator runbook (policy-only mode + emergency rollback)).
 For copy/paste commands, use: `docs/CLOUD_BOT_COMMAND_CARD.md`.

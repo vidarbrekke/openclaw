@@ -1,4 +1,4 @@
-# Cloud Bot Command Card (strict + phased mode)
+# Cloud Bot Command Card (policy-only mode + emergency rollback)
 
 Use from SSH on the Linode. Do not run these from chat/agent exec.
 

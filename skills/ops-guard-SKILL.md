@@ -40,12 +40,14 @@ The combined report includes:
   enforcement status and log location
 - **Exec Security Posture:** current exec/elevated permissions configuration
 - **Skill Scanner:** timer status, schedule, last run
+- **Telegram Routing Assertions:** threshold checks for invalid sender spikes,
+  duplicate message ids, and missing message-id proxy fallbacks
 - **Log Rotation:** automatic rotation at 5 MB for scanner and guard logs
 
-## Runtime guards (enforced in JS bundles)
+## Runtime guards (policy-layer, current mode)
 
-These guards are injected into OpenClaw's compiled bundles via
-`/root/.openclaw/scripts/enforce-websearch-guard.py`:
+These guards are enforced through policy-layer guidance and strict tool/config
+boundaries:
 
 1. **web_search cap:** max 5 calls per 10-min session window, max 2 identical
    queries per window. Returns error JSON instead of executing the search.
@@ -54,20 +56,15 @@ These guards are injected into OpenClaw's compiled bundles via
 3. **memory date sweep cap:** max 20 reads of `/memory/YYYY-MM-DD.md` per run.
 4. **service-control block:** blocks in-chat exec of gateway restart/stop commands.
 
-Guard enforcement runs:
-- **On gateway start:** via `ExecStartPre` drop-in on `openclaw-gateway.service`
-- **Every 15 min:** via the ops-maintenance orchestrator
+Guard posture is validated every 15 minutes by the ops-maintenance orchestrator
+and surfaced in the combined report.
 
-If enforcement fails, a sanitised Telegram alert is sent (no internal paths leaked).
+## Runtime patch fallback status
 
-## Phased migration mode
-
-Guardrails run in phased mode:
-
-- **Primary:** policy-layer runtime guard guidance (`runtime-guard-policy` skill).
-- **Fallback:** runtime patch enforcement in `enforce-websearch-guard.py`.
-
-This preserves reliability while migrating away from compiled-bundle patching.
+- **Current operating mode:** policy-only.
+- **Runtime patch fallback:** retired/disabled in normal operation.
+- **Emergency rollback artifact:** `/root/.openclaw/var/rollback/10-websearch-guard.conf.bak`
+  can be restored temporarily during incident response.
 
 ## Exec security posture
 
@@ -84,8 +81,11 @@ If any service is failed or cooldown health is "Degraded":
 
 ## Workspace invariants
 
-The orchestrator checks and repairs essential files in isolated workspaces
-(e.g., `telegram-isolated/MEMORY.md`, `telegram-isolated/USER.md`) every 15 min.
+The orchestrator checks and repairs essential files every 15 min for:
+- default workspace
+- telegram-isolated workspace
+- telegram-vidar-proxy workspace
+
 Missing files are recreated automatically; the report shows "repaired" when this happens.
 
 ## Transparency commitment
