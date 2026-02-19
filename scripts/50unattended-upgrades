@@ -1,0 +1,20 @@
+// Automatically upgrade packages from these origins
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}:${distro_codename}-updates";
+};
+
+// Do not upgrade packages from these origins (optional)
+Unattended-Upgrade::Blacklist {
+    // "package-name";
+};
+
+// Auto-reboot if needed
+Unattended-Upgrade::AutoReboot "true";
+Unattended-Upgrade::AutoRebootTime "02:00";
+
+// Send email reports (set to "" to disable)
+Unattended-Upgrade::Mail "root@localhost";
+
+// Log to syslog
+Unattended-Upgrade::Verbose "1";

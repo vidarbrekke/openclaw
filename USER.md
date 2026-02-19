@@ -10,6 +10,8 @@ _Learn about the person you're helping. Update this as you go._
 
 ## Context
 
+- **Growth Area:** Exploring AI app building as a potential next career; spending time learning and building apps using AI tools.
+
 _(What do they care about? What projects are they working on? What annoys them? What makes them laugh? Build this over time.)_
 
 ---

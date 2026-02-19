@@ -1,0 +1,54 @@
+name: linear
+description: |
+  Linear API integration via Maton gateway. Query and manage issues, projects, teams, cycles, and labels using GraphQL.
+  Requires MATON_API_KEY environment variable. Get your key at https://maton.ai/settings
+version: 1.0.0
+config:
+  env:
+    - name: MATON_API_KEY
+      required: true
+      description: Maton API key from https://maton.ai/settings
+tools:
+  - name: linear_graphql
+    description: Execute GraphQL queries against Linear API via Maton gateway
+    parameters:
+      - name: query
+        type: string
+        required: true
+        description: GraphQL query or mutation
+      - name: variables
+        type: object
+        required: false
+        description: GraphQL variables
+      - name: connection_id
+        type: string
+        required: false
+        description: Maton connection ID (optional, uses default if not specified)
+    returns:
+      type: object
+      description: GraphQL response data
+example_queries:
+  - name: Get current user
+    query: '{ viewer { id name email } }'
+  - name: List teams
+    query: '{ teams { nodes { id name key } } }'
+  - name: List issues
+    query: '{ issues(first: 10) { nodes { id identifier title state { name } priority createdAt } pageInfo { hasNextPage endCursor } } }'
+  - name: Get issue by ID
+    query: '{ issue(id: "MTN-527") { id identifier title description state { name } priority assignee { name } } }'
+  - name: Search issues
+    query: '{ searchIssues(first: 10, term: "shopify") { nodes { id identifier title } } }'
+endpoint:
+  url: https://gateway.maton.ai/linear/graphql
+  method: POST
+  headers:
+    Authorization: Bearer ${MATON_API_KEY}
+    Content-Type: application/json
+notes: |
+  Manage your Linear OAuth connections at https://ctrl.maton.ai
+  To create a connection:
+    curl -X POST https://ctrl.maton.ai/connections \
+      -H "Authorization: Bearer $MATON_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"app": "linear"}'
+  Documentation: /Users/vidarbrekke/clawd/skills/linear-api/SKILL.md

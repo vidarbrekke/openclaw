@@ -1,0 +1,19 @@
+--- a/dist/providers/transform-messages.js
++++ b/dist/providers/transform-messages.js
+@@ -117,6 +117,16 @@ export function transformMessages(messages, model, normalizeToolCallId) {
+             result.push(msg);
+         }
+         else if (msg.role === "toolResult") {
++            // Guard: only push tool_result if the previous message is an assistant that contains this tool_use.
++            // Trimming/compaction can drop the assistant but keep the tool_result, causing API errors
++            // ("Each tool_result block must have a corresponding tool_use block in the previous message").
++            const prev = result[result.length - 1];
++            const prevHasMatchingToolUse = prev?.role === "assistant" &&
++                Array.isArray(prev.content) &&
++                prev.content.some((b) => b?.type === "toolCall" && b.id === msg.toolCallId);
++            if (!prevHasMatchingToolUse) {
++                continue; // skip orphan tool_result
++            }
+             existingToolResultIds.add(msg.toolCallId);
+             result.push(msg);
+         }

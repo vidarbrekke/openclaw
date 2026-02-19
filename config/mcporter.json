@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "motherknitter": {
+      "command": "node",
+      "args": ["/Users/vidarbrekke/Dev/mcp-motherknitter/build/index.js"]
+    }
+  },
+  "imports": []
+}
