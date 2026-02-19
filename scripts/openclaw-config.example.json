@@ -1,0 +1,9 @@
+{
+  "gateway": {
+    "mode": "local",
+    "port": 18789,
+    "auth": {
+      "token": "set-via-env-openclaw_gateway_token"
+    }
+  }
+}

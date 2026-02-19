@@ -1,6 +1,7 @@
 node_modules/
 .env
 .env.local
+.env.openclaw
 *.log
 .DS_Store
 test-results/
@@ -9,3 +10,6 @@ test-results/
 sandnes-swatch-automation/data/*.csv
 sandnes-swatch-automation/data/*.json
 sandnes-swatch-automation/data/*.log
+
+# Local OpenClaw runtime config with credentials
+scripts/openclaw-config.json
