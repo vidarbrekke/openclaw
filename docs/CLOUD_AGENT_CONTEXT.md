@@ -46,6 +46,7 @@ When the user says... | You do...
 - **exec** = shell commands. The **process** tool has no "exec" action — always use **exec**.
 - **memory_search** = searches memory files (MEMORY.md, daily notes). It does **not** search repos, config, or arbitrary files — use **read**, **exec** + grep/git, or **ls** for those.
 - **web_fetch** = fetch a URL. GitHub rate-limits aggressively; prefer local git + read over repeated web_fetch of GitHub URLs.
+- **web_search** = uses Perplexity Sonar Pro. Pass `freshness` for time-sensitive queries: `"pd"` (last day), `"pw"` (last week), `"pm"` (last month), `"py"` (last year). Pass `count` (1–10) to control depth — 3–5 for quick lookups, 8–10 for research. Example: `{ "query": "...", "freshness": "pw", "count": 6 }`. Omit `freshness` for timeless topics.
 - On tool error: try a different approach (e.g. ls instead of read for a directory). Don't retry the same failing call.
 
 ## When something breaks
