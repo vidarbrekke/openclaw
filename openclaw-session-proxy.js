@@ -13,29 +13,9 @@ import http from "http";
 import https from "https";
 import fs from "fs";
 import path from "path";
-import { URL, pathToFileURL } from "url";
+import { URL } from "url";
 import crypto from "crypto";
-import { Transform } from "stream";
-
-// Dynamic import: try multiple locations for the round-robin module.
-// Order: local dev (skills/round-robin/) → repo root (compat) → global install (~/.openclaw/modules/)
-let rr = null;
-const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const home = process.env.HOME || process.env.USERPROFILE || "";
-const rrPaths = [
-  path.join(__dirname, "skills", "round-robin", "model-round-robin.js"),
-  path.join(__dirname, "model-round-robin.js"),
-  path.join(home, ".openclaw", "modules", "model-round-robin.js"),
-];
-for (const p of rrPaths) {
-  try {
-    if (fs.existsSync(p)) {
-      rr = await import(pathToFileURL(p).href);
-      break;
-    }
-  } catch (_) {}
-}
-const { createRoundRobinState, transformChatBody, processRoundRobinCommands, isRoundRobinEnabled, TURNS_PER_MODEL = 2 } = rr || {};
 
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:18789";
 const PROXY_PORT = Number(process.env.PROXY_PORT || 3010);
@@ -60,6 +40,31 @@ if (!GATEWAY_TOKEN) {
     if (typeof t === "string" && t.trim()) GATEWAY_TOKEN = t.trim();
   } catch (_) {}
 }
+
+// Fail fast if legacy round-robin artifacts remain (retired in favor of router model).
+function checkNoLegacyRoundRobin() {
+  if (!home) return;
+  const openclawDir = path.join(home, ".openclaw");
+  const legacy = [
+    { path: path.join(openclawDir, "skills", "round-robin"), kind: "dir" },
+    { path: path.join(openclawDir, "modules", "model-round-robin.js"), kind: "file" },
+    { path: path.join(openclawDir, "round-robin-models.json"), kind: "file" },
+  ];
+  const found = [];
+  for (const { path: legacyPath, kind } of legacy) {
+    try {
+      if (kind === "dir" && fs.existsSync(legacyPath) && fs.statSync(legacyPath).isDirectory()) found.push(legacyPath);
+      else if (kind === "file" && fs.existsSync(legacyPath) && fs.statSync(legacyPath).isFile()) found.push(legacyPath);
+    } catch (_) {}
+  }
+  if (found.length === 0) return;
+  console.error(`[proxy] Legacy round-robin artifacts found (round-robin has been retired in favor of the router model).`);
+  console.error(`[proxy] Remove these and restart the proxy:`);
+  found.forEach((p) => console.error(`  - ${p}`));
+  console.error(`[proxy] Example: rm -rf ~/.openclaw/skills/round-robin ~/.openclaw/modules/model-round-robin.js ~/.openclaw/round-robin-models.json`);
+  process.exit(1);
+}
+checkNoLegacyRoundRobin();
 
 function generateSessionKey() {
   return `${SESSION_PREFIX}${crypto.randomUUID()}`;
@@ -143,46 +148,50 @@ function performGatewayJsonRequest(proxyOptions, payloadObj) {
   });
 }
 
-const roundRobinModels = process.env.ROUND_ROBIN_MODELS;
-const roundRobinAvailable = !!(rr && createRoundRobinState);
-const roundRobinState = roundRobinAvailable ? createRoundRobinState(roundRobinModels) : null;
-
-// Per-session: roundRobinEnabled + index (default true when feature is on)
-function getSessionRoundRobin(sk) {
-  return getRotationState(sk);
+function getMessageText(msg) {
+  if (!msg) return "";
+  if (typeof msg.content === "string") return msg.content;
+  if (Array.isArray(msg.content)) {
+    return msg.content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part?.type === "text" && typeof part.text === "string") return part.text;
+        return "";
+      })
+      .join(" ")
+      .trim();
+  }
+  return "";
 }
-function setSessionRoundRobin(sk, s) {
-  SESSION_ROTATION_STATE.set(sk, s);
+
+function getLastUserMessageText(messages) {
+  if (!Array.isArray(messages)) return "";
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg?.role === "user") return getMessageText(msg);
+  }
+  return "";
+}
+
+function isoDayFromMs(ts) {
+  return new Date(ts).toISOString().slice(0, 10);
+}
+
+function classifyTaskFromMessage(text) {
+  const q = (text || "").toLowerCase();
+  if (!q) return "unknown";
+  if (/(fix|bug|error|exception|traceback|fails|failing|broken|debug)/.test(q)) return "debug";
+  if (/(refactor|cleanup|restructure|reorganize)/.test(q)) return "refactor";
+  if (/(test|unit test|integration test|tdd|coverage)/.test(q)) return "testing";
+  if (/(plan|design|architecture|approach|trade-?off)/.test(q)) return "planning";
+  if (/(review|code review|audit)/.test(q)) return "review";
+  if (/(implement|build|create|add|feature)/.test(q)) return "implementation";
+  if (/(docs|document|readme|explain|write-up)/.test(q)) return "documentation";
+  return "general";
 }
 
 const server = http.createServer((req, res) => {
   const reqUrl = req.url || "/";
-  
-  // Debug: round-robin status
-  if (reqUrl === "/round-robin/status") {
-    const models = roundRobinState?.getModels?.() ?? [];
-    const sessions = {};
-    for (const [key, value] of SESSION_ROTATION_STATE.entries()) {
-      sessions[key] = {
-        roundRobinEnabled: value.roundRobinEnabled === true,
-        index: value.index ?? 0,
-        lastAppliedModel: value.lastAppliedModel ?? null,
-      };
-    }
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify(
-        {
-          enabled: isRoundRobinEnabled(roundRobinModels),
-          models,
-          sessions,
-        },
-        null,
-        2
-      )
-    );
-    return;
-  }
   // Handle /new - generate session, inject token, redirect to path-based URL
   // Path /s/:sessionKey gives each tab its own cookie scope (Path=/s/xxx) so tabs don't overwrite each other
   if (reqUrl === "/new" || reqUrl === "/new/") {
@@ -234,12 +243,7 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  const useRoundRobin = roundRobinAvailable && isRoundRobinEnabled(roundRobinModels) && isChatCompletions(req.method, targetPath);
   const isChatRequest = isChatCompletions(req.method, targetPath);
-  if (useRoundRobin) {
-    delete proxyHeaders["content-length"];
-    delete proxyHeaders["transfer-encoding"];
-  }
 
   const proxyOptions = {
     hostname: gatewayUrl.hostname,
@@ -259,25 +263,19 @@ const server = http.createServer((req, res) => {
       } catch {
         parsed = {};
       }
-
-      if (useRoundRobin) {
-        const sk = sessionKey || "default";
-        const getSession = () => getSessionRoundRobin(sk);
-        const setSession = (s) => setSessionRoundRobin(sk, s);
-        const { applyRoundRobin } = processRoundRobinCommands(parsed, getSession, setSession);
-        const modifiedBody = Buffer.from(JSON.stringify(parsed));
-        const sessionState = getSession();
-        const perSessionState = {
-          index: sessionState.index ?? 0,
-          turnsUsed: sessionState.turnsUsed ?? 0,
-          getModels: roundRobinState.getModels,
-        };
-        const transformed = transformChatBody(perSessionState, modifiedBody, { applyRoundRobin });
-        setSession({ ...sessionState, index: perSessionState.index, turnsUsed: perSessionState.turnsUsed });
-        parsed = JSON.parse(transformed.body.toString("utf8"));
-        if (applyRoundRobin && transformed.model) console.log(`[proxy] round-robin [${sk}] -> ${transformed.model}`);
-        else if (!applyRoundRobin) console.log(`[proxy] bypass (explicit model)`);
-      }
+      const requestStartedTs = Date.now();
+      const sk = sessionKey || "default";
+      const originalModel = typeof parsed?.model === "string" ? parsed.model : "";
+      const lastUserMsg = getLastUserMessageText(parsed?.messages || []);
+      const userMessagePreview = lastUserMsg.slice(0, ROUTER_MSG_PREVIEW_MAX_CHARS);
+      const userMessageChars = lastUserMsg.length;
+      const taskType = classifyTaskFromMessage(lastUserMsg);
+      let modelSource = "passthrough";
+      let selectedModel = originalModel;
+      let toolGateRetryCount = 0;
+      let toolGateEscalated = false;
+      let toolGateEscalateModel = "";
+      let toolGateHadValidToolCalls = null;
 
       const toolGateActive =
         TOOL_GATE_ENABLED &&
@@ -298,6 +296,7 @@ const server = http.createServer((req, res) => {
           for (let i = 0; i < TOOL_GATE_MAX_RETRIES; i++) {
             const retried = await performGatewayJsonRequest(proxyOptions, retryPayload);
             result = retried;
+            toolGateRetryCount += 1;
             if (result.json && hasValidToolCall(result.json)) break;
           }
           if (
@@ -309,8 +308,42 @@ const server = http.createServer((req, res) => {
             console.log(`[proxy] tool-gate escalate model -> ${TOOL_GATE_ESCALATE_MODEL}`);
             const escalated = { ...retryPayload, model: TOOL_GATE_ESCALATE_MODEL };
             result = await performGatewayJsonRequest(proxyOptions, escalated);
+            toolGateEscalated = true;
+            toolGateEscalateModel = TOOL_GATE_ESCALATE_MODEL;
+            selectedModel = TOOL_GATE_ESCALATE_MODEL;
+            modelSource = "tool-gate-escalation";
           }
         }
+        if (toolGateActive) {
+          toolGateHadValidToolCalls = !!(result.json && hasValidToolCall(result.json));
+        }
+
+        appendRouterDecisionLog({
+          ts: Date.now(),
+          event: "chat_completion",
+          sessionKey: sk,
+          method: req.method,
+          path: targetPath,
+          isStreaming: parsed?.stream === true,
+          taskType,
+          userMessagePreview,
+          userMessageChars,
+          toolsCount: Array.isArray(parsed?.tools) ? parsed.tools.length : 0,
+          toolChoice: parsed?.tool_choice ?? null,
+          originalModel,
+          selectedModel: selectedModel || parsed?.model || "",
+          finalModel: (toolGateEscalated ? TOOL_GATE_ESCALATE_MODEL : parsed?.model) || selectedModel || "",
+          modelSource,
+          routerModelSelectionApplied: false,
+          toolGateActive,
+          toolGateRetryCount,
+          toolGateEscalated,
+          toolGateEscalateModel,
+          toolGateHadValidToolCalls,
+          responseStatusCode: result.statusCode || 0,
+          responseHasToolCalls: !!(result.json && hasValidToolCall(result.json)),
+          responseTimeMs: Math.max(0, Date.now() - requestStartedTs),
+        });
 
         const headers = { ...result.headers };
         if (!headers["content-type"]) headers["content-type"] = "application/json";
@@ -362,218 +395,22 @@ const server = http.createServer((req, res) => {
     }
   });
 
-  if (useRoundRobin) {
-    const chunks = [];
-    req.on("data", (chunk) => chunks.push(chunk));
-    req.on("end", () => {
-      const rawBody = Buffer.concat(chunks);
-      let parsed;
-      try {
-        parsed = JSON.parse(rawBody.toString("utf8"));
-      } catch {
-        parsed = {};
-      }
-      const sk = sessionKey || "default";
-      const getSession = () => getSessionRoundRobin(sk);
-      const setSession = (s) => setSessionRoundRobin(sk, s);
-      const { applyRoundRobin } = processRoundRobinCommands(parsed, getSession, setSession);
-      const modifiedBody = Buffer.from(JSON.stringify(parsed));
-      // Per-session rotation index and turns-used (each model runs TURNS_PER_MODEL turns before advancing)
-      const sessionState = getSession();
-      const perSessionState = {
-        index: sessionState.index ?? 0,
-        turnsUsed: sessionState.turnsUsed ?? 0,
-        getModels: roundRobinState.getModels,
-      };
-      const { body, model } = transformChatBody(perSessionState, modifiedBody, { applyRoundRobin });
-      setSession({ ...sessionState, index: perSessionState.index, turnsUsed: perSessionState.turnsUsed });
-      proxyReq.setHeader("Content-Length", body.length);
-      proxyReq.write(body);
-      proxyReq.end();
-      if (applyRoundRobin && model) console.log(`[proxy] round-robin [${sk}] -> ${model}`);
-      else if (!applyRoundRobin) console.log(`[proxy] bypass (explicit model)`);
-    });
-  } else {
-    req.pipe(proxyReq);
-  }
+  req.pipe(proxyReq);
 });
 
-// --- Round-robin via sessions.json model override ---
-// The gateway reads modelOverride/providerOverride from sessions.json on every run.
-// We write the next round-robin model there before forwarding the chat.send frame.
-// This works for WebSocket chat (Control UI), cron jobs, hooks — anything using that session.
-const SESSIONS_JSON_PATH = path.join(home, ".openclaw", "agents", "main", "sessions", "sessions.json");
-const SESSION_ROTATION_STATE = new Map();
-const SESSION_UPDATED_AT = new Map();
-let sessionsWriteInFlight = false;
+// --- Router decision observability ---
+const ROUTER_DECISION_LOG_DIR = path.join(home, ".openclaw", "logs", "router-decisions");
+const ROUTER_MSG_PREVIEW_MAX_CHARS = 400;
 
-function getRotationState(sk) {
-  const existing = SESSION_ROTATION_STATE.get(sk) ?? { roundRobinEnabled: false };
-  if (!SESSION_ROTATION_STATE.has(sk)) SESSION_ROTATION_STATE.set(sk, existing);
-  return existing;
-}
-
-function applyRoundRobinModelOverrideToStore(store, sessionKey) {
-  if (!roundRobinAvailable || !roundRobinState?.getModels) return null;
-  if (!isRoundRobinEnabled(roundRobinModels)) return null;
-
-  const sk = sessionKey || "default";
-  const session = getRotationState(sk);
-  if (!session.roundRobinEnabled) return null;
-
-  const models = roundRobinState.getModels();
-  if (!models.length) return null;
-
-  const idx = session.index ?? 0;
-  const turnsUsed = session.turnsUsed ?? 0;
-  const fullModel = models[idx % models.length];
-  const advance = turnsUsed >= (TURNS_PER_MODEL - 1);
-  SESSION_ROTATION_STATE.set(sk, {
-    ...session,
-    index: advance ? (idx + 1) % models.length : idx,
-    turnsUsed: advance ? 0 : turnsUsed + 1,
-    lastAppliedModel: fullModel,
-  });
-
-  // Parse "provider/org/model" → provider="provider", model="org/model"
-  // e.g. "openrouter/google/gemini-2.5-flash" → provider="openrouter", model="google/gemini-2.5-flash"
-  const slashIdx = fullModel.indexOf("/");
-  const provider = slashIdx > 0 ? fullModel.slice(0, slashIdx) : undefined;
-  const model = slashIdx > 0 ? fullModel.slice(slashIdx + 1) : fullModel;
-
-  // Update store entry in-memory (caller handles write)
-  const storeKey = Object.keys(store).find((k) => k === sessionKey || k.endsWith(`:${sessionKey}`)) || sessionKey;
-  if (!store[storeKey]) {
-    store[storeKey] = { sessionId: crypto.randomUUID(), updatedAt: Date.now() };
-  }
-  store[storeKey].modelOverride = model;
-  if (provider) store[storeKey].providerOverride = provider;
-  store[storeKey].updatedAt = Date.now();
-  console.log(`[proxy] round-robin [${sk}] -> ${fullModel} (via sessions.json)`);
-  return fullModel;
-}
-
-// --- WebSocket frame helpers ---
-// WebSocket frames from the Control UI are JSON-RPC: {"type":"req","id":"...","method":"chat.send","params":{...}}
-// We intercept text frames to detect chat.send and apply model override before forwarding.
-function consumeWsTextFrames(buffer) {
-  const frames = [];
-  let offset = 0;
-  while (buffer.length - offset >= 2) {
-    const byte0 = buffer[offset];
-    const byte1 = buffer[offset + 1];
-    const fin = (byte0 & 0x80) !== 0;
-    const opcode = byte0 & 0x0f;
-    const masked = (byte1 & 0x80) !== 0;
-    let payloadLen = byte1 & 0x7f;
-    let headerLen = 2;
-    if (payloadLen === 126) {
-      if (buffer.length - offset < 4) break;
-      payloadLen = buffer.readUInt16BE(offset + 2);
-      headerLen = 4;
-    } else if (payloadLen === 127) {
-      if (buffer.length - offset < 10) break;
-      payloadLen = Number(buffer.readBigUInt64BE(offset + 2));
-      headerLen = 10;
-    }
-    const maskLen = masked ? 4 : 0;
-    const frameLen = headerLen + maskLen + payloadLen;
-    if (buffer.length - offset < frameLen) break;
-
-    const maskOffset = offset + headerLen;
-    const payloadOffset = maskOffset + maskLen;
-    const payload = Buffer.from(buffer.slice(payloadOffset, payloadOffset + payloadLen));
-    if (masked) {
-      const maskKey = buffer.slice(maskOffset, maskOffset + 4);
-      for (let i = 0; i < payload.length; i++) payload[i] ^= maskKey[i % 4];
-    }
-
-    // Only parse complete text frames (FIN + opcode 1)
-    if (fin && opcode === 1) {
-      try {
-        const parsed = JSON.parse(payload.toString("utf8"));
-        frames.push(parsed);
-      } catch {
-        // ignore non-JSON payloads
-      }
-    }
-    offset += frameLen;
-  }
-  return { frames, remainder: buffer.slice(offset) };
-}
-
-function shouldRotateForEntry(sessionKey, entry) {
-  const sk = sessionKey || "default";
-  const state = getRotationState(sk);
-  if (!state.roundRobinEnabled) return false;
-  const lastApplied = state.lastAppliedModel;
-  const currentOverride = entry?.modelOverride;
-  // If user pinned a model, don't override it.
-  if (currentOverride && currentOverride !== lastApplied) return false;
-  return true;
-}
-
-function updateRotationFromStore() {
-  if (!fs.existsSync(SESSIONS_JSON_PATH)) return;
-  if (sessionsWriteInFlight) return;
-  let store = {};
+function appendRouterDecisionLog(entry) {
+  const ts = typeof entry?.ts === "number" ? entry.ts : Date.now();
+  const day = isoDayFromMs(ts);
+  const pathForDay = path.join(ROUTER_DECISION_LOG_DIR, `router-decisions-${day}.jsonl`);
   try {
-    store = JSON.parse(fs.readFileSync(SESSIONS_JSON_PATH, "utf8"));
-  } catch {
-    return;
-  }
-  let changed = false;
-  for (const [key, entry] of Object.entries(store)) {
-    const updatedAt = typeof entry?.updatedAt === "number" ? entry.updatedAt : 0;
-    const lastSeen = SESSION_UPDATED_AT.get(key) ?? 0;
-    if (updatedAt <= lastSeen) continue;
-    SESSION_UPDATED_AT.set(key, updatedAt);
-    if (!shouldRotateForEntry(key, entry)) continue;
-    const applied = applyRoundRobinModelOverrideToStore(store, key);
-    if (applied) changed = true;
-  }
-  if (!changed) return;
-  try {
-    sessionsWriteInFlight = true;
-    fs.writeFileSync(SESSIONS_JSON_PATH, JSON.stringify(store, null, 2), "utf8");
+    if (!fs.existsSync(ROUTER_DECISION_LOG_DIR)) fs.mkdirSync(ROUTER_DECISION_LOG_DIR, { recursive: true });
+    fs.appendFileSync(pathForDay, `${JSON.stringify(entry)}\n`, "utf8");
   } catch (err) {
-    console.error(`[proxy] round-robin sessions.json write failed:`, err.message);
-  } finally {
-    sessionsWriteInFlight = false;
-  }
-}
-
-function rotateSessionOverride(sessionKey) {
-  if (!fs.existsSync(SESSIONS_JSON_PATH)) return;
-  if (sessionsWriteInFlight) return;
-  let store = {};
-  try {
-    store = JSON.parse(fs.readFileSync(SESSIONS_JSON_PATH, "utf8"));
-  } catch {
-    return;
-  }
-  const entry = store[sessionKey];
-  if (!shouldRotateForEntry(sessionKey, entry)) return;
-  const applied = applyRoundRobinModelOverrideToStore(store, sessionKey);
-  if (!applied) return;
-  try {
-    sessionsWriteInFlight = true;
-    fs.writeFileSync(SESSIONS_JSON_PATH, JSON.stringify(store, null, 2), "utf8");
-  } catch (err) {
-    console.error(`[proxy] round-robin sessions.json write failed:`, err.message);
-  } finally {
-    sessionsWriteInFlight = false;
-  }
-}
-
-function startSessionsWatcher() {
-  try {
-    fs.watch(SESSIONS_JSON_PATH, { persistent: true }, () => {
-      // Debounce: multiple events can fire; one sync read is fine.
-      updateRotationFromStore();
-    });
-  } catch (err) {
-    console.error(`[proxy] sessions.json watch failed:`, err.message);
+    console.error(`[proxy] router decision log write failed:`, err.message);
   }
 }
 
@@ -626,39 +463,8 @@ server.on("upgrade", (req, socket, head) => {
       socket.write(proxyHead);
     }
     
-    // Inspect client→gateway frames without modifying the stream.
-  if (roundRobinAvailable && isRoundRobinEnabled(roundRobinModels)) {
-      let wsBuffer = Buffer.alloc(0);
-      const inspectStream = new Transform({
-        transform(chunk, _enc, cb) {
-          wsBuffer = Buffer.concat([wsBuffer, chunk]);
-          const { frames, remainder } = consumeWsTextFrames(wsBuffer);
-          wsBuffer = remainder;
-          for (const parsed of frames) {
-            if (parsed?.type === "req" && parsed?.method === "chat.send" && parsed?.params?.sessionKey) {
-              const sk = parsed.params.sessionKey;
-              const msgText = (parsed.params.message || "").trim();
-              const session = getRotationState(sk);
-              if (/\/model\b/i.test(msgText)) {
-                SESSION_ROTATION_STATE.set(sk, { ...session, roundRobinEnabled: false });
-                console.log(`[proxy] round-robin disabled for ${sk} (/model command)`);
-              } else if (/\/round-robin\b/i.test(msgText)) {
-                SESSION_ROTATION_STATE.set(sk, { ...session, roundRobinEnabled: true });
-                console.log(`[proxy] round-robin re-enabled for ${sk}`);
-              }
-              // Rotate immediately for chat turns
-              rotateSessionOverride(sk);
-            }
-          }
-          cb(null, chunk);
-        },
-      });
-      socket.pipe(inspectStream).pipe(proxySocket);
-      proxySocket.pipe(socket);
-    } else {
-      proxySocket.pipe(socket);
-      socket.pipe(proxySocket);
-    }
+    proxySocket.pipe(socket);
+    socket.pipe(proxySocket);
     
     proxySocket.on("error", () => socket.destroy());
     socket.on("error", () => proxySocket.destroy());
@@ -677,14 +483,7 @@ server.listen(PROXY_PORT, "127.0.0.1", () => {
   console.log(`  Proxying: ${GATEWAY_URL}`);
   console.log(`  Listening: http://127.0.0.1:${PROXY_PORT}`);
   console.log(`  Gateway token: ${GATEWAY_TOKEN ? "auto-injected (from openclaw.json)" : "not found (paste in Control UI settings)"}`);
-  if (roundRobinAvailable && roundRobinState?.getModels) {
-    const models = roundRobinState.getModels();
-    if (models?.length) console.log(`  Round-robin: ${models.length} models (active)`);
-  } else {
-    console.log(`  Round-robin: not installed (install with skills/round-robin/install.sh)`);
-  }
   console.log(``);
   console.log(`Open http://127.0.0.1:${PROXY_PORT}/new to start a new session`);
   console.log(`Each tab with /new gets an isolated chat session; settings are global.`);
-  startSessionsWatcher();
 });

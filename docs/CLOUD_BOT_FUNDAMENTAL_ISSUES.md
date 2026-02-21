@@ -21,7 +21,7 @@ In your case, the logs showed **Config overwrite** from the Control UI (writes t
 
 **What to do**
 
-- **Avoid accidental restarts:** In `/root/.openclaw/openclaw.json` on the Linode, set `commands.restart: false` if you don’t want `/restart` or UI-driven restart to be possible.
+- **Avoid accidental restarts:** In `/root/openclaw-stock-home/.openclaw/openclaw.json` on the Linode, set `commands.restart: false` if you don’t want `/restart` or UI-driven restart to be possible.
 - **Strict boundary:** Gateway lifecycle commands are operator-only and must not run from chat/agent exec flows.
 - **Be careful with config in the UI:** Saving certain fields (e.g. under Agents, Bindings) can trigger a full gateway restart and drop all WebSocket connections, so both tabs go blank and need a refresh + session reselect.
 

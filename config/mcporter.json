@@ -3,6 +3,10 @@
     "motherknitter": {
       "command": "node",
       "args": ["/Users/vidarbrekke/Dev/mcp-motherknitter/build/index.js"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
     }
   },
   "imports": []

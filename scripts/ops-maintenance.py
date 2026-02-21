@@ -5,11 +5,11 @@ Replaces 4 separate timers: ops-guard-status, cooldown-report,
 workspace-invariants, websearch-guard (periodic).
 
 Runs every 15 minutes. Produces a single combined report at:
-  /root/.openclaw/workspace/memory/ops-combined-report.md
+  /root/openclaw-stock-home/.openclaw/workspace/memory/ops-combined-report.md
 
 State persisted in:
-  /root/.openclaw/var/ops-state/cooldown-counters.json
-  /root/.openclaw/var/ops-state/journal-cursor
+  /root/openclaw-stock-home/.openclaw/var/ops-state/cooldown-counters.json
+  /root/openclaw-stock-home/.openclaw/var/ops-state/journal-cursor
 """
 import json
 import os
@@ -19,11 +19,11 @@ from collections import Counter
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-MEMORY_DIR = Path("/root/.openclaw/workspace/memory")
-STATE_DIR = Path("/root/.openclaw/var/ops-state")
-LOG_DIR = Path("/root/.openclaw/logs")
+MEMORY_DIR = Path("/root/openclaw-stock-home/.openclaw/workspace/memory")
+STATE_DIR = Path("/root/openclaw-stock-home/.openclaw/var/ops-state")
+LOG_DIR = Path("/root/openclaw-stock-home/.openclaw/logs")
 TELEGRAM_ROUTER_LOG = LOG_DIR / "telegram-sender-router.log"
-CONFIG_PATH = Path("/root/.openclaw/openclaw.json")
+CONFIG_PATH = Path("/root/openclaw-stock-home/.openclaw/openclaw.json")
 GATEWAY_DROPIN = Path("/root/.config/systemd/user/openclaw-gateway.service.d/10-websearch-guard.conf")
 COMBINED_REPORT = MEMORY_DIR / "ops-combined-report.md"
 COOLDOWN_STATE = STATE_DIR / "cooldown-counters.json"
@@ -79,7 +79,7 @@ units = {
 
 # ── 2. Workspace invariants ─────────────────────────────────
 
-DEFAULT_BASE = Path("/root/.openclaw/workspace")
+DEFAULT_BASE = Path("/root/openclaw-stock-home/.openclaw/workspace")
 ISOLATED_BASE = Path("/root/.openclaw/workspace-telegram-isolated")
 PROXY_BASE = Path("/root/.openclaw/workspace-telegram-vidar-proxy")
 DEFAULT_BASE.mkdir(parents=True, exist_ok=True)
@@ -227,11 +227,10 @@ guard_result = "policy-only mode (runtime patch fallback retired)"
 
 telegram_metrics = {
     "routes_total_24h": 0,
-    "vidar_to_proxy_24h": 0,
+    "vidar_to_main_24h": 0,
     "others_to_isolated_24h": 0,
     "invalid_sender_fallback_24h": 0,
     "duplicate_message_id_24h": 0,
-    "missing_message_id_for_proxy_24h": 0,
 }
 telegram_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
 
@@ -251,16 +250,14 @@ if TELEGRAM_ROUTER_LOG.exists():
                 continue
 
             telegram_metrics["routes_total_24h"] += 1
-            if "agentId=telegram-vidar-proxy" in line and "sender=5309173712" in line:
-                telegram_metrics["vidar_to_proxy_24h"] += 1
+            if "agentId=main" in line and "sender=5309173712" in line:
+                telegram_metrics["vidar_to_main_24h"] += 1
             if "agentId=telegram-isolated" in line and "sender=5309173712" not in line:
                 telegram_metrics["others_to_isolated_24h"] += 1
             if "reason=invalid_sender" in line:
                 telegram_metrics["invalid_sender_fallback_24h"] += 1
             if "reason=duplicate_message_id" in line:
                 telegram_metrics["duplicate_message_id_24h"] += 1
-            if "reason=missing_message_id_for_proxy" in line:
-                telegram_metrics["missing_message_id_for_proxy_24h"] += 1
     except Exception:
         pass
 
@@ -269,7 +266,6 @@ if TELEGRAM_ROUTER_LOG.exists():
 TELEGRAM_THRESHOLDS = {
     "invalid_sender_fallback_24h": 10,
     "duplicate_message_id_24h": 25,
-    "missing_message_id_for_proxy_24h": 0,
 }
 telegram_assertions = []
 if telegram_metrics["invalid_sender_fallback_24h"] > TELEGRAM_THRESHOLDS["invalid_sender_fallback_24h"]:
@@ -280,8 +276,6 @@ if telegram_metrics["duplicate_message_id_24h"] > TELEGRAM_THRESHOLDS["duplicate
     telegram_assertions.append(
         f"duplicate_message_id_24h>{TELEGRAM_THRESHOLDS['duplicate_message_id_24h']}"
     )
-if telegram_metrics["missing_message_id_for_proxy_24h"] > TELEGRAM_THRESHOLDS["missing_message_id_for_proxy_24h"]:
-    telegram_assertions.append("missing_message_id_for_proxy_24h>0")
 
 telegram_routing_status = "Healthy" if not telegram_assertions else "Attention"
 
@@ -324,7 +318,7 @@ report_lines = [
 for name, st in units.items():
     report_lines.append(f"- {name}: {st}")
 report_lines.append(f"- workspace-invariants: checked inline ({'ok' if invariants_ok else 'repaired'})")
-report_lines.append("- workspace-invariants scope: default workspace + telegram-isolated + telegram-vidar-proxy")
+report_lines.append("- workspace-invariants scope: default workspace + telegram-isolated")
 if repaired_files:
     report_lines.append(f"- workspace-invariants repaired files: {', '.join(repaired_files)}")
 report_lines.append(f"- memory daily-file backfill window: {MEMORY_BACKFILL_DAYS} days")
@@ -348,6 +342,7 @@ report_lines += [
     "",
     "## Runtime Guards",
     "- web_search cap: max 5 total, max 2 duplicate per session window",
+    "- web_fetch cap: max 5 total, max 2 duplicate URL per session window",
     "- read loop cap: max 2 identical ENOENT reads per run",
     "- memory date sweep cap: max 20 reads of /memory/YYYY-MM-DD.md per run",
     "- service-control exec cap: block restart/stop gateway commands from chat/agent exec",
@@ -368,26 +363,24 @@ report_lines += [
     "",
     "## Telegram Routing Health (24h)",
     f"- routes_total_24h: {telegram_metrics['routes_total_24h']}",
-    f"- vidar_to_proxy_24h: {telegram_metrics['vidar_to_proxy_24h']}",
+    f"- vidar_to_main_24h: {telegram_metrics['vidar_to_main_24h']}",
     f"- others_to_isolated_24h: {telegram_metrics['others_to_isolated_24h']}",
     f"- invalid_sender_fallback_24h: {telegram_metrics['invalid_sender_fallback_24h']}",
     f"- duplicate_message_id_24h: {telegram_metrics['duplicate_message_id_24h']}",
-    f"- missing_message_id_for_proxy_24h: {telegram_metrics['missing_message_id_for_proxy_24h']}",
     "",
     "## Telegram Routing Assertions",
     f"- Status: **{telegram_routing_status}**",
     f"- Threshold invalid_sender_fallback_24h <= {TELEGRAM_THRESHOLDS['invalid_sender_fallback_24h']}",
     f"- Threshold duplicate_message_id_24h <= {TELEGRAM_THRESHOLDS['duplicate_message_id_24h']}",
-    f"- Threshold missing_message_id_for_proxy_24h <= {TELEGRAM_THRESHOLDS['missing_message_id_for_proxy_24h']}",
     f"- Breaches: {', '.join(telegram_assertions) if telegram_assertions else 'none'}",
     "",
     "## Architecture",
-    "- This report is generated by `/root/.openclaw/scripts/ops-maintenance.py`",
+    "- This report is generated by `/root/openclaw-stock-home/.openclaw/scripts/ops-maintenance.py`",
     "- Runs every 15 min via `openclaw-ops-maintenance.timer`",
     "- Replaces 4 separate timers: ops-guard-status, cooldown-report,",
     "  workspace-invariants, websearch-guard (periodic)",
     "- Guardrails are in policy-only mode (runtime patch fallback retired).",
-    "- Rollback artifact retained at `/root/.openclaw/var/rollback/10-websearch-guard.conf.bak`.",
+    "- Rollback artifact retained at `/root/openclaw-stock-home/.openclaw/var/rollback/10-websearch-guard.conf.bak`.",
     "",
 ]
 

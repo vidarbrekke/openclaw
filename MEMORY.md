@@ -208,18 +208,18 @@ Use background download job with cookies:
 openclaw browser --json cookies --browser-profile openclaw --target-id <id> > cookies.json
 
 # 2. Build cookie header (helper script fixed 2026-02-14)
-/Users/vidarbrekke/Dev/CursorApps/clawd/scripts/openclaw-cookie-header-from-json.sh \
+scripts/openclaw-cookie-header-from-json.sh \
   --input cookies.json --domain sharepoint.com --raw > cookie-header.txt
 
 # 3. Start background download job
 COOKIE_HEADER=$(cat cookie-header.txt)
-/Users/vidarbrekke/Dev/CursorApps/clawd/scripts/openclaw-download-job.sh \
+scripts/openclaw-download-job.sh \
   --url "https://sandnesgarn.sharepoint.com/..." \
   --output "/tmp/openclaw/downloads/filename.jpg" \
   --cookie-header "$COOKIE_HEADER"
 
 # 4. Poll for completion
-/Users/vidarbrekke/Dev/CursorApps/clawd/scripts/openclaw-download-job-status.sh \
+scripts/openclaw-download-job-status.sh \
   --job-id <JOB_ID> --tail 10
 ```
 
@@ -245,7 +245,7 @@ COOKIE_HEADER=$(cat cookie-header.txt)
 **Project:** `sandnes-swatch-automation/` (git-managed)
 
 ### Quick Reference
-- **Location:** `/Users/vidarbrekke/Dev/CursorApps/clawd/sandnes-swatch-automation`
+- **Location:** `sandnes-swatch-automation/` (from repo root)
 - **Run:** `./run-swatch.sh wholesale` or `./run-swatch.sh prod`
 - **Safe test:** `./run-swatch.sh wholesale --dry-run` (download + process only, no uploads/SSH)
 - **Docs:** `sandnes-swatch-automation/README.md` and `docs/SWATCH_RUNBOOK.md`
@@ -262,6 +262,39 @@ COOKIE_HEADER=$(cat cookie-header.txt)
 - **Total:** 29 swatches automated
 
 **See project NOTES.md for complete technical details.**
+
+---
+
+## MotherKnitter MCP Server — Correct Tool Usage
+
+**Date:** 2026-02-19  
+**Issue:** Tool name mismatch and input schema confusion
+
+### Problem
+Initial attempts to query gift card balance failed due to:
+1. Using `motherknitter.giftcard_lookup` (underscore not dot) — correct
+2. Passing `site: "production"` (quoted) — **wrong**
+3. Correct: `site: production` (enum value without quotes)
+
+### Working Command Pattern
+
+```bash
+mcporter call motherknitter.giftcard_lookup \
+  "code: \"SZ58-RH4G-J5YF-PVYH\"" \
+  "site: production"
+```
+
+### Available Tools (from `build/tools/index.js`)
+
+- `motherknitter.giftcard_lookup` — Look up gift card balance
+- `motherknitter.giftcard_update` — Update balance (absolute or relative)
+- `motherknitter.giftcard_deactivate` — Deactivate a card
+- `motherknitter.giftcard_reactivate` — Reactivate a card
+
+### Site Options
+- `production` (default)
+- `wholesale`
+- `staging`
 
 ---
 
@@ -324,3 +357,14 @@ After `browser start`:
 - `status.profile` should show `"openclaw"`
 - `status.running` should be `true`
 - `status.cdpReady` should be `true`
+
+---
+
+## Linode / Cloud (when running on server)
+
+- **Config:** `/root/openclaw-stock-home/.openclaw/openclaw.json` (hot-reloads).
+- **Workspace:** `/root/openclaw-stock-home/.openclaw/workspace` (this repo).
+- **Repos:** `workspace/repositories/<name>` (e.g. `mcp-motherknitter`, `gogcli-enhanced`). See `docs/CLOUD_GIT_DEV_OPS.md`.
+- **Ops report:** `memory/ops-combined-report.md` (updated every 15 min).
+- **Skills:** `/root/openclaw-stock-home/.openclaw/skills/` (ops-guard, skill-scanner, runtime-guard-policy).
+- **Do not restart or stop the gateway from chat.** Operator runbook: `docs/CLOUD_BOT_COMMAND_CARD.md`. Self-fix: `docs/CLOUD_BOT_SELF_FIX_GUIDE.md`.

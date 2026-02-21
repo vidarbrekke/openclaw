@@ -2,20 +2,25 @@
 """
 Enforce runtime guards on OpenClaw JS bundles:
   1. web_search: max 5 calls / max 2 duplicate per session window
-  2. read: max 2 identical ENOENT reads per run
+  2. web_fetch: max 5 calls / max 2 duplicate URL per session window
+  3. read: max 2 identical ENOENT reads per run
 
 Runs as ExecStartPre on gateway start and periodically via ops-maintenance.
 Sends sanitised Telegram alerts on failure (no internal paths leaked).
 """
 from pathlib import Path
 import json
+import os
 import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 
-CONFIG_PATH = "/root/.openclaw/openclaw.json"
-LOG_PATH = "/root/.openclaw/logs/websearch-guard.log"
+_OPENCLAW_HOME = os.environ.get("OPENCLAW_HOME") or os.environ.get("HOME", "/root/openclaw-stock-home")
+if not _OPENCLAW_HOME.endswith("openclaw-stock-home") and _OPENCLAW_HOME == "/root":
+    _OPENCLAW_HOME = "/root/openclaw-stock-home"
+CONFIG_PATH = os.path.join(_OPENCLAW_HOME, ".openclaw", "openclaw.json")
+LOG_PATH = os.path.join(_OPENCLAW_HOME, ".openclaw", "logs", "websearch-guard.log")
 
 DIST_DIR = Path("/usr/lib/node_modules/openclaw/dist")
 FILES = sorted(DIST_DIR.glob("*.js")) if DIST_DIR.exists() else []
@@ -25,6 +30,9 @@ WEB_PATTERN = re.compile(
 )
 EXEC_PATTERN = re.compile(
     r'const params = args;\n\s*const command = readStringParam\(params, "command", \{ required: true \}\);'
+)
+WEB_FETCH_PATTERN = re.compile(
+    r'const params = args;\n\s*const url = readStringParam\(params, ["\']url["\'], \{ required: true \}\);'
 )
 WEB_INJECT = """const params = args;
 \t\t\tconst query = readStringParam(params, "query", { required: true });
@@ -57,6 +65,38 @@ WEB_INJECT = """const params = args;
 \t\t\t\tquery,
 \t\t\t\tqueryCalls: guardState.queries[normalizedQuery],
 \t\t\t\twindowMs: guardWindowMs
+\t\t\t});"""
+WEB_FETCH_INJECT = """const params = args;
+\t\t\tconst url = readStringParam(params, "url", { required: true });
+\t\t\tconst fetchGuardStore = globalThis.__openclawWebFetchGuard ?? (globalThis.__openclawWebFetchGuard = new Map);
+\t\t\tconst fetchGuardSessionKey = options?.agentSessionKey || "__global__";
+\t\t\tconst fetchGuardWindowMs = 600000;
+\t\t\tconst now = Date.now();
+\t\t\tlet fetchGuardState = fetchGuardStore.get(fetchGuardSessionKey);
+\t\t\tif (!fetchGuardState || now - (fetchGuardState.lastTs || 0) > fetchGuardWindowMs) fetchGuardState = {
+\t\t\t\ttotal: 0,
+\t\t\t\turls: {},
+\t\t\t\tlastTs: now
+\t\t\t};
+\t\t\tconst normalizedUrl = (url && typeof url === "string" ? url.trim() : "").toLowerCase();
+\t\t\tfetchGuardState.total += 1;
+\t\t\tfetchGuardState.urls[normalizedUrl] = (fetchGuardState.urls[normalizedUrl] || 0) + 1;
+\t\t\tfetchGuardState.lastTs = now;
+\t\t\tfetchGuardStore.set(fetchGuardSessionKey, fetchGuardState);
+\t\t\tif (fetchGuardState.total > 5) return jsonResult({
+\t\t\t\terror: "web_fetch_limit_exceeded",
+\t\t\t\tmessage: "web_fetch limit reached (max 5 per session window). Use local git/read for repo comparison; avoid repeated URL fetches.",
+\t\t\t\tlimit: 5,
+\t\t\t\ttotalCalls: fetchGuardState.total,
+\t\t\t\twindowMs: fetchGuardWindowMs
+\t\t\t});
+\t\t\tif (fetchGuardState.urls[normalizedUrl] > 2) return jsonResult({
+\t\t\t\terror: "web_fetch_duplicate_url_limit_exceeded",
+\t\t\t\tmessage: "Duplicate web_fetch URL limit reached (max 2 for same URL per session window).",
+\t\t\t\tlimit: 2,
+\t\t\t\turl: normalizedUrl.slice(0, 200),
+\t\t\t\turlCalls: fetchGuardState.urls[normalizedUrl],
+\t\t\t\twindowMs: fetchGuardWindowMs
 \t\t\t});"""
 EXEC_INJECT = """const params = args;
 \t\t\tconst command = readStringParam(params, "command", { required: true });
@@ -144,6 +184,14 @@ for file_path in FILES:
         else:
             failures.append(f"EXEC_ANCHOR_MULTI: {p.name}")
 
+    if WEB_FETCH_PATTERN.search(s) and "web_fetch_limit_exceeded" not in s:
+        s2, c = WEB_FETCH_PATTERN.subn(WEB_FETCH_INJECT, s, count=1)
+        if c == 1:
+            s = s2
+            changed = True
+        else:
+            failures.append(f"WEB_FETCH_ANCHOR_MULTI: {p.name}")
+
     if READ_OLD in s and "read_path_repeat_limit_exceeded" not in s:
         s = s.replace(READ_OLD, READ_NEW, 1)
         changed = True
@@ -154,7 +202,7 @@ for file_path in FILES:
     if changed:
         p.write_text(s, encoding="utf-8")
         patched += 1
-    elif "web_search_limit_exceeded" in s or "read_path_repeat_limit_exceeded" in s or "exec_command_blocked" in s:
+    elif "web_search_limit_exceeded" in s or "web_fetch_limit_exceeded" in s or "read_path_repeat_limit_exceeded" in s or "exec_command_blocked" in s:
         already += 1
 
 summary = f"SUMMARY patched={patched} already={already} failures={len(failures)}"

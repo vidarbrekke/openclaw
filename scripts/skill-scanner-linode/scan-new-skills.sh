@@ -3,8 +3,8 @@
 # State: one file per skill in STATE_DIR; we rescan if skill dir is newer or state missing.
 set -euo pipefail
 
-SKILLS_DIR="${OPENCLAW_SKILLS_DIR:-/root/.openclaw/skills}"
-STATE_DIR="${SKILL_SCANNER_STATE_DIR:-/root/.openclaw/var/skill-scanner-state}"
+SKILLS_DIR="${OPENCLAW_SKILLS_DIR:-/root/openclaw-stock-home/.openclaw/skills}"
+STATE_DIR="${SKILL_SCANNER_STATE_DIR:-/root/openclaw-stock-home/.openclaw/var/skill-scanner-state}"
 LOG_FILE="${SKILL_SCANNER_LOG:-/var/log/skill-scanner.log}"
 SCANNER_CMD="${SKILL_SCANNER_CMD:-/opt/skill-scanner/venv/bin/skill-scanner}"
 SCAN_OPTS="--use-behavioral --format summary"

@@ -1,15 +1,19 @@
 /**
- * Telegram Sender Router Hook (hardened)
- * Routes by sender ID with strict parsing and fail-safe defaults:
- * - Vidar (5309173712) -> telegram-vidar-proxy (spawn to main workspace)
- * - Everyone else -> telegram-isolated
+ * Telegram Sender Router
+ *
+ * Routes by sender ID. One session per (agent, channel, sender) so conversation
+ * persists across messages. /new resets that session.
+ *
+ * - Vidar (5309173712) → main   (same agent as webchat; stable session, single announce)
+ * - Everyone else → telegram-isolated
  */
 
 import fs from "node:fs";
 
 const VIDAR_TELEGRAM_ID = "5309173712";
-const LOG_PATH = "/root/.openclaw/logs/telegram-sender-router.log";
-const SEEN_IDS_PATH = "/root/.openclaw/var/ops-state/telegram-router-seen-ids.json";
+const OPENCLAW_HOME = process.env.OPENCLAW_HOME || (process.env.HOME?.endsWith("openclaw-stock-home") ? process.env.HOME : "/root/openclaw-stock-home");
+const LOG_PATH = `${OPENCLAW_HOME}/.openclaw/logs/telegram-sender-router.log`;
+const SEEN_IDS_PATH = `${OPENCLAW_HOME}/.openclaw/var/ops-state/telegram-router-seen-ids.json`;
 const DEDUPE_WINDOW_SECONDS = 6 * 60 * 60;
 
 function appendLog(line) {
@@ -74,32 +78,25 @@ export default async function handler(context) {
     data?.id;
   const messageId = messageIdRaw ? String(messageIdRaw).trim() : null;
   const nowSeconds = Math.floor(Date.now() / 1000);
+
   if (!senderId) {
     const fallbackAgentId = "telegram-isolated";
-    const fallbackSessionKey = `agent:${fallbackAgentId}:telegram:unknown`;
+    const sessionKey = `agent:${fallbackAgentId}:telegram:unknown`;
     logger.warn(
       "telegram-sender-router: sender id missing/invalid, using fail-safe isolated route"
     );
     appendLog(
-      `[${new Date().toISOString()}] channel=telegram sender=unknown messageId=${messageId || "none"} action=route agentId=${fallbackAgentId} sessionKey=${fallbackSessionKey} reason=invalid_sender`
+      `[${new Date().toISOString()}] channel=telegram sender=unknown messageId=${messageId || "none"} action=route agentId=${fallbackAgentId} sessionKey=${sessionKey} reason=invalid_sender`
     );
-    return {
-      ok: true,
-      agentId: fallbackAgentId,
-      sessionKey: fallbackSessionKey,
-    };
+    return { ok: true, agentId: fallbackAgentId, sessionKey };
   }
 
-  let agentId = senderId === VIDAR_TELEGRAM_ID ? "telegram-vidar-proxy" : "telegram-isolated";
+  const agentId = senderId === VIDAR_TELEGRAM_ID ? "main" : "telegram-isolated";
+  const sessionKey = `agent:${agentId}:telegram:${senderId}`;
+
   let reason = "normal_route";
   let dedupeState = "n/a";
   let duplicateMessage = false;
-
-  // Hard gate: proxy routing requires a message id, otherwise idempotency cannot be guaranteed.
-  if (agentId === "telegram-vidar-proxy" && !messageId) {
-    agentId = "telegram-isolated";
-    reason = "missing_message_id_for_proxy";
-  }
 
   if (messageId) {
     const seen = loadSeenMessageIds();
@@ -109,16 +106,11 @@ export default async function handler(context) {
     seen[dedupeKey] = nowSeconds;
     saveSeenMessageIds(seen);
     dedupeState = duplicateMessage ? "duplicate" : "first_seen";
-    if (duplicateMessage) {
-      reason = "duplicate_message_id";
-    }
+    if (duplicateMessage) reason = "duplicate_message_id";
   } else {
     dedupeState = "no_message_id";
   }
 
-  const sessionKey = messageId
-    ? `agent:${agentId}:telegram:${senderId}:msg:${messageId}`
-    : `agent:${agentId}:telegram:${senderId}`;
   logger.info(`telegram-sender-router: routing sender ${senderId} -> ${agentId}`);
   appendLog(
     `[${new Date().toISOString()}] channel=telegram sender=${senderId} messageId=${messageId || "none"} action=route agentId=${agentId} sessionKey=${sessionKey} dedupe=${dedupeState} duplicate=${duplicateMessage ? "1" : "0"} reason=${reason}`
@@ -126,4 +118,3 @@ export default async function handler(context) {
 
   return { ok: true, agentId, sessionKey };
 }
-

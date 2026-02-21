@@ -6,7 +6,7 @@
 
 - **Trigger:** System cron every **hour** (at :00) runs `scan-new-skills.sh`. Only skills that are **new** (no state file) or **changed** (dir mtime newer than last scan) are scanned. No full-tree scan every run.
 - **Scanner:** Static + behavioral analyzers only (no LLM/API). Installed in an isolated venv under `/opt/skill-scanner`.
-- **State:** `/root/.openclaw/var/skill-scanner-state/` — one file per skill name; mtime of that file = last scan time.
+- **State:** `/root/openclaw-stock-home/.openclaw/var/skill-scanner-state/` — one file per skill name; mtime of that file = last scan time.
 - **Log:** `/var/log/skill-scanner.log` — append-only; each scan logs the skill name and the scanner’s summary output.
 - **Updates:** Cron **Sunday 03:00** runs `upgrade-scanner.sh` to `pip install -U cisco-ai-skill-scanner`.
 
@@ -25,8 +25,10 @@ Requires: root, Python 3.10+ (installer will try `apt-get install python3 python
 ## After install
 
 - **Log:** `ssh root@45.79.135.101 "tail -f /var/log/skill-scanner.log"`
-- **Manual scan one skill:** `ssh root@45.79.135.101 "/opt/skill-scanner/venv/bin/skill-scanner scan /root/.openclaw/skills/SkillName --use-behavioral"`
-- **Force rescan all:** `ssh root@45.79.135.101 "rm -f /root/.openclaw/var/skill-scanner-state/*"` — next minute cron will treat all as new.
+- **Manual scan one skill:** `ssh root@45.79.135.101 "/opt/skill-scanner/venv/bin/skill-scanner scan /root/openclaw-stock-home/.openclaw/skills/SkillName --use-behavioral"`
+- **Force rescan all:** `ssh root@45.79.135.101 "rm -f /root/openclaw-stock-home/.openclaw/var/skill-scanner-state/*"` — next timer run will treat all as new.
+
+**If skill-scanner was installed before switching to stock-home:** Either re-run the install (so the scan script uses the new defaults) or add to the systemd service: `Environment="OPENCLAW_SKILLS_DIR=/root/openclaw-stock-home/.openclaw/skills"` and `Environment="SKILL_SCANNER_STATE_DIR=/root/openclaw-stock-home/.openclaw/var/skill-scanner-state"`, then `systemctl --user daemon-reload`.
 
 ## Optional: alert on findings
 

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "motherknitter": {
+      "command": "node",
+      "args": ["/root/openclaw-stock-home/.openclaw/workspace/repositories/mcp-motherknitter/build/index.js"]
+    },
+    "playwright": {
+      "command": "bash",
+      "args": ["-c", "cd /root/openclaw-stock-home/.openclaw/playwright-mcp && exec node node_modules/@playwright/mcp/cli.js"],
+      "env": { "PLAYWRIGHT_BROWSERS_PATH": "/root/.cache/ms-playwright" }
+    }
+  },
+  "imports": []
+}

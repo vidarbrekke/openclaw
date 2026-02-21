@@ -1,9 +1,10 @@
 #!/bin/bash
 # Cloud (Linode) version of clawd memory backup. Backs up OpenClaw config + workspace.
-# Paths: /root/.openclaw. Output: /root/.openclaw-backups. No rclone by default.
+# Default OpenClaw home: /root/openclaw-stock-home/.openclaw (override with OPENCLAW_DIR).
+# Output: /root/.openclaw-backups. No rclone by default.
 set -euo pipefail
 
-OPENCLAW_DIR="/root/.openclaw"
+OPENCLAW_DIR="${OPENCLAW_DIR:-/root/openclaw-stock-home/.openclaw}"
 LOCAL_BACKUP_DIR="/root/.openclaw-backups"
 LOG_FILE="$LOCAL_BACKUP_DIR/backup.log"
 RETENTION_DAYS=7
@@ -46,7 +47,7 @@ ClawBackup (cloud) restore notes. Restore openclaw_config/* to $OPENCLAW_DIR/
 EOF
 
 # Stage selected OpenClaw dir contents (exclude sessions, logs, credentials)
-for item in openclaw.json round-robin-models.json adaptive-memory-digest-state.json; do
+for item in openclaw.json adaptive-memory-digest-state.json; do
   [ -f "$OPENCLAW_DIR/$item" ] && cp "$OPENCLAW_DIR/$item" "$STAGING_DIR/openclaw_config/"
 done
 [ -d "$OPENCLAW_DIR/skills" ] && cp -R "$OPENCLAW_DIR/skills" "$STAGING_DIR/openclaw_config/"

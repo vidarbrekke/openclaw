@@ -4,19 +4,6 @@ For agents: when to use each skill and key commands.
 
 ---
 
-## Round-Robin (this repo)
-
-**Use:** Rotate model per turn; list/edit round-robin models.
-
-- **Activation:** Opt-in. Open `http://127.0.0.1:3010/new`, then type `/round-robin` in chat.
-- **Config:** `~/.openclaw/round-robin-models.json` → `{"models": ["id1","id2",...]}`
-- **Status:** `http://127.0.0.1:3010/round-robin/status`
-- **Commands:** `/round-robin` (restart/re-enable), `/round-robin edit` (change list), `/model <id>` (pin, disables rotation)
-
-Details: `skills/round-robin/SKILL.md`
-
----
-
 ## Humanizer (humanizer/)
 
 **Use:** Humanize AI text, de-AI writing, score drafts.

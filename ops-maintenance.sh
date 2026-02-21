@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MEMORY_DIR="/root/.openclaw/workspace/memory"
-STATE_DIR="/root/.openclaw/var/ops-state"
-LOG_DIR="/root/.openclaw/logs"
-CONFIG="/root/.openclaw/openclaw.json"
+MEMORY_DIR="/root/openclaw-stock-home/.openclaw/workspace/memory"
+STATE_DIR="/root/openclaw-stock-home/.openclaw/var/ops-state"
+LOG_DIR="/root/openclaw-stock-home/.openclaw/logs"
+CONFIG="/root/openclaw-stock-home/.openclaw/openclaw.json"
 COMBINED_REPORT="$MEMORY_DIR/ops-combined-report.md"
 COOLDOWN_STATE="$STATE_DIR/cooldown-counters.json"
 MAX_LOG_SIZE=5242880  # 5MB
@@ -23,7 +23,7 @@ INVARIANTS_STATE=$(unit_state openclaw-workspace-invariants.timer)
 SCANNER_STATE=$(unit_state skill-scanner.timer)
 
 # --- Workspace invariants (inline, replaces separate timer) ---
-BASE="/root/.openclaw/workspace/telegram-isolated"
+BASE="/root/.openclaw/workspace-telegram-isolated"
 mkdir -p "$BASE"
 [ ! -f "$BASE/MEMORY.md" ] && cat > "$BASE/MEMORY.md" <<'EOM'
 # MEMORY.md - Telegram Isolated Workspace

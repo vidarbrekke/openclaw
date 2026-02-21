@@ -51,4 +51,4 @@ notes: |
       -H "Authorization: Bearer $MATON_API_KEY" \
       -H "Content-Type: application/json" \
       -d '{"app": "linear"}'
-  Documentation: /Users/vidarbrekke/clawd/skills/linear-api/SKILL.md
+  Documentation: skills/linear-api/SKILL.md (in repo)

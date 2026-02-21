@@ -17,11 +17,11 @@ ssh -i ~/.ssh/id_ed25519_linode root@45.79.135.101
 Then (backup first, then merge):
 
 ```bash
-cp /root/.openclaw/openclaw.json /root/.openclaw/openclaw.json.bak
+cp /root/openclaw-stock-home/.openclaw/openclaw.json /root/openclaw-stock-home/.openclaw/openclaw.json.bak
 # Merge in Perplexity web search config (creates tools.web.search.perplexity)
 node -e "
 const fs = require('fs');
-const path = '/root/.openclaw/openclaw.json';
+const path = '/root/openclaw-stock-home/.openclaw/openclaw.json';
 const cfg = JSON.parse(fs.readFileSync(path, 'utf8'));
 cfg.tools = cfg.tools || {};
 cfg.tools.web = cfg.tools.web || {};
@@ -39,7 +39,7 @@ console.log('Updated tools.web.search to use Perplexity.');
 
 **Option B – Edit by hand**
 
-Edit `/root/.openclaw/openclaw.json` and ensure the `tools` section includes:
+Edit `/root/openclaw-stock-home/.openclaw/openclaw.json` and ensure the `tools` section includes:
 
 ```json
 "tools": {
@@ -60,15 +60,15 @@ Do **not** put your real API key in the JSON. The gateway will read it from the 
 
 ## 2. Set the API key on the Linode
 
-OpenClaw loads env vars from `~/.openclaw/.env` when the gateway runs. On the Linode that is `/root/.openclaw/.env`.
+OpenClaw loads env vars from `~/.openclaw/.env` when the gateway runs. On the Linode stock-home that is `/root/openclaw-stock-home/.openclaw/.env`.
 
 Create or edit that file (only on the server):
 
 ```bash
 # On the Linode
-echo 'PERPLEXITY_API_KEY=pplx-your-key-here' >> /root/.openclaw/.env
+echo 'PERPLEXITY_API_KEY=pplx-your-key-here' >> /root/openclaw-stock-home/.openclaw/.env
 # Or edit in place:
-nano /root/.openclaw/.env
+nano /root/openclaw-stock-home/.openclaw/.env
 ```
 
 Add a single line:
@@ -80,7 +80,7 @@ PERPLEXITY_API_KEY=pplx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Replace with your real key from the [Perplexity API](https://www.perplexity.ai/settings/api) (or use the same key you use on the Mac). Keep this file readable only by root:
 
 ```bash
-chmod 600 /root/.openclaw/.env
+chmod 600 /root/openclaw-stock-home/.openclaw/.env
 ```
 
 ## 3. Restart the gateway
@@ -98,14 +98,14 @@ systemctl --user restart openclaw-gateway.service
 
 In a session that allows `web_search`, ask the agent to search the web. If the gateway fails to start or web_search errors, check:
 
-- `PERPLEXITY_API_KEY` is set in `/root/.openclaw/.env` (no typos, no extra spaces).
-- `tools.web.search.provider` is `"perplexity"` and `tools.web.search.perplexity.baseUrl` is `"https://api.perplexity.ai"` in `/root/.openclaw/openclaw.json`.
+- `PERPLEXITY_API_KEY` is set in `/root/openclaw-stock-home/.openclaw/.env` (no typos, no extra spaces).
+- `tools.web.search.provider` is `"perplexity"` and `tools.web.search.perplexity.baseUrl` is `"https://api.perplexity.ai"` in `/root/openclaw-stock-home/.openclaw/openclaw.json`.
 - Gateway logs (e.g. journal if systemd): `journalctl --user -u openclaw-gateway.service -f`
 
 ## Reference (Mac vs Linode)
 
 - **Mac:** Key can be in `~/.openclaw/openclaw.json` (e.g. from `openclaw configure --section web`) or in `~/.openclaw/.env` as `PERPLEXITY_API_KEY`.
-- **Linode:** Key only in `/root/.openclaw/.env`; config in `/root/.openclaw/openclaw.json` uses Perplexity with no `apiKey` field so the gateway uses the env var.
+- **Linode:** Key only in `/root/openclaw-stock-home/.openclaw/.env`; config in `/root/openclaw-stock-home/.openclaw/openclaw.json` uses Perplexity with no `apiKey` field so the gateway uses the env var.
 
 Models (optional to change in config):
 

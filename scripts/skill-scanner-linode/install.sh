@@ -5,8 +5,8 @@ set -euo pipefail
 
 INSTALL_ROOT="${INSTALL_ROOT:-/opt/skill-scanner}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILLS_DIR="${OPENCLAW_SKILLS_DIR:-/root/.openclaw/skills}"
-STATE_DIR="/root/.openclaw/var/skill-scanner-state"
+SKILLS_DIR="${OPENCLAW_SKILLS_DIR:-/root/openclaw-stock-home/.openclaw/skills}"
+STATE_DIR="/root/openclaw-stock-home/.openclaw/var/skill-scanner-state"
 LOG_FILE="/var/log/skill-scanner.log"
 
 echo "Installing skill-scanner under $INSTALL_ROOT..."

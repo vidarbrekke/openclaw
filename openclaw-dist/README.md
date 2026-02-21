@@ -8,7 +8,7 @@ Community add-ons and docs for [OpenClaw](https://github.com/mariozechner/opencl
 
 - **Troubleshooting guide** — Fixes for Control UI, login, models, and Kimi-K2.5 issues (`docs/CLAWDBOT_TROUBLESHOOTING.md`).
 
-For the **Session Proxy** (isolated chat sessions per tab) and **round-robin skill**, see the main repo: https://github.com/vidarbrekke/openclaw
+For the **Session Proxy** (isolated chat sessions per tab), see the main repo: https://github.com/vidarbrekke/openclaw
 
 ---
 

@@ -15,17 +15,17 @@ or answering questions about what operational safeguards exist.
 
 All operational maintenance is consolidated into a single orchestrator:
 
-- **Script:** `/root/.openclaw/scripts/ops-maintenance.py`
+- **Script:** `/root/openclaw-stock-home/.openclaw/scripts/ops-maintenance.py`
 - **Timer:** `openclaw-ops-maintenance.timer` (every 15 min)
-- **Report:** `/root/.openclaw/workspace/memory/ops-combined-report.md`
-- **State:** `/root/.openclaw/var/ops-state/` (cooldown counters, journal cursor)
+- **Report:** `/root/openclaw-stock-home/.openclaw/workspace/memory/ops-combined-report.md`
+- **State:** `/root/openclaw-stock-home/.openclaw/var/ops-state/` (cooldown counters, journal cursor)
 
 This replaced 4 separate timers (ops-guard-status, cooldown-report,
 workspace-invariants, websearch-guard periodic) with one unified service.
 
 ## How to check health
 
-1. Read `/root/.openclaw/workspace/memory/ops-combined-report.md`.
+1. Read `/root/openclaw-stock-home/.openclaw/workspace/memory/ops-combined-report.md`.
 2. Include a short "Ops Health" section in any daily briefing or status response.
 
 ## Report sections
@@ -51,10 +51,12 @@ boundaries:
 
 1. **web_search cap:** max 5 calls per 10-min session window, max 2 identical
    queries per window. Returns error JSON instead of executing the search.
-2. **read loop cap:** max 2 reads of the same path per run/session. Throws
+2. **web_fetch cap:** max 5 calls per 10-min session window, max 2 identical
+   URLs per window. Returns error JSON when exceeded (avoids 429 loops).
+3. **read loop cap:** max 2 reads of the same path per run/session. Throws
    `read_path_repeat_limit_exceeded` on the third attempt.
-3. **memory date sweep cap:** max 20 reads of `/memory/YYYY-MM-DD.md` per run.
-4. **service-control block:** blocks in-chat exec of gateway restart/stop commands.
+4. **memory date sweep cap:** max 20 reads of `/memory/YYYY-MM-DD.md` per run.
+5. **service-control block:** blocks in-chat exec of gateway restart/stop commands.
 
 Guard posture is validated every 15 minutes by the ops-maintenance orchestrator
 and surfaced in the combined report.
@@ -63,7 +65,7 @@ and surfaced in the combined report.
 
 - **Current operating mode:** policy-only.
 - **Runtime patch fallback:** retired/disabled in normal operation.
-- **Emergency rollback artifact:** `/root/.openclaw/var/rollback/10-websearch-guard.conf.bak`
+- **Emergency rollback artifact:** `/root/openclaw-stock-home/.openclaw/var/rollback/10-websearch-guard.conf.bak`
   can be restored temporarily during incident response.
 
 ## Exec security posture
@@ -84,7 +86,6 @@ If any service is failed or cooldown health is "Degraded":
 The orchestrator checks and repairs essential files every 15 min for:
 - default workspace
 - telegram-isolated workspace
-- telegram-vidar-proxy workspace
 
 Missing files are recreated automatically; the report shows "repaired" when this happens.
 

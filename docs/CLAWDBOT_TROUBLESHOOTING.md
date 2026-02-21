@@ -11,7 +11,7 @@ Two things were happening on the Linode gateway:
 So queries appeared to "take minutes" or "get stuck" because the agent was stuck in that tool-call loop until the 10-minute timeout.
 
 ### Fix applied (Linode)
-On the Linode (`/root/.openclaw/openclaw.json`):
+On the Linode (`/root/openclaw-stock-home/.openclaw/openclaw.json`):
 
 1. **Lower run timeout:** `agents.defaults.timeoutSeconds` set to **120** (2 minutes). Stuck runs now fail fast instead of burning 10 minutes.
 2. **Primary model left as `router`** (Mistral Small 3.2 24B) for the routing skill (router evaluates task complexity and routes to specialist models). Fallbacks: **default** (Qwen), **writer** (Haiku), **generalist** (Gemini Flash).
@@ -21,7 +21,7 @@ With OpenClaw 2026.2.17 the read-tool `file_path`→`path` fix should be in plac
 ### If it happens again
 - Check gateway logs: `ssh root@45.79.135.101 'journalctl --user -u openclaw-gateway.service -n 100'`. Look for `read tool called without path` or `embedded run timeout`.
 - Confirm OpenClaw version on Linode includes the read-tool alias fix (e.g. `openclaw --version` or check release notes for #7451).
-- To change timeout or model on the Linode: edit `/root/.openclaw/openclaw.json` (e.g. `agents.defaults.timeoutSeconds`, `agents.defaults.model.primary`), and apply only operator-approved restart procedures. Never execute restart/stop from chat/agent exec.
+- To change timeout or model on the Linode: edit `/root/openclaw-stock-home/.openclaw/openclaw.json` (e.g. `agents.defaults.timeoutSeconds`, `agents.defaults.model.primary`), and apply only operator-approved restart procedures. Never execute restart/stop from chat/agent exec.
 
 ---
 
@@ -34,7 +34,7 @@ Use this when the cloud bot appears slow, stuck, or disconnected.
 - Conversational sessions must not execute gateway lifecycle commands.
 - Gateway lifecycle actions are operator-only via manual SSH.
 - Guardrails are policy-first, with transparent status in:
-  - `/root/.openclaw/workspace/memory/ops-combined-report.md`
+  - `/root/openclaw-stock-home/.openclaw/workspace/memory/ops-combined-report.md`
 
 ### Never do from chat/agent exec
 
@@ -55,7 +55,7 @@ Use this when the cloud bot appears slow, stuck, or disconnected.
    ```
 3. Check active guard posture:
    ```bash
-   cat /root/.openclaw/workspace/memory/ops-combined-report.md
+   cat /root/openclaw-stock-home/.openclaw/workspace/memory/ops-combined-report.md
    ```
    Confirm these lines:
    - `guard_policy_mode: enabled`
@@ -84,7 +84,7 @@ If guard policy migration regresses and you need temporary fallback:
 
 1. Restore saved drop-in:
    ```bash
-   cp /root/.openclaw/var/rollback/10-websearch-guard.conf.bak /root/.config/systemd/user/openclaw-gateway.service.d/10-websearch-guard.conf
+   cp /root/openclaw-stock-home/.openclaw/var/rollback/10-websearch-guard.conf.bak /root/.config/systemd/user/openclaw-gateway.service.d/10-websearch-guard.conf
    ```
 2. Reload + restart:
    ```bash
@@ -102,6 +102,32 @@ If guard policy migration regresses and you need temporary fallback:
 
 ---
 
+## Excessive LLM calls (cost and rate limits)
+
+### What drives cost
+
+1. **Fallback cascade** — When the primary model times out or errors, the gateway tries each fallback (e.g. default, writer, generalist). One user request can become **4 LLM calls** (primary + 3 fallbacks). Many timeouts → many cascades.
+2. **Tool rounds per turn** — Each time the model calls a tool and gets a result, that’s another LLM call (model decides next action). Example: gift-card flow with spawn → subagents list → sessions_history → sessions_send → session_status = **5+ LLM calls** for one balance check. Redundant or failing tool calls (e.g. forbidden) still burn calls.
+3. **Long run timeout** — `agents.defaults.timeoutSeconds` (e.g. 180) lets a stuck run burn that long before failing and triggering the fallback cascade.
+4. **Session-labeler hook** — Runs on `/new`, `/reset`, `/stop` and may call the LLM to generate a short label; frequent new sessions increase calls.
+
+### Mitigations (operator-approved only)
+
+- **Lower run timeout** — e.g. `agents.defaults.timeoutSeconds: 120` so stuck runs fail sooner and trigger fewer fallbacks.
+- **Fewer fallbacks** — e.g. one fallback instead of three in `agents.defaults.model.fallbacks` to reduce cascade size (primary + 1 instead of +3).
+- **Gift-card flow** — Main must not call `subagents`, `sessions_history`, `sessions_send`, or `session_status` after `sessions_spawn` for gift-card; wait only for the auto-announce. (Enforced in main workspace AGENTS.md.)
+- **Session-labeler** — If it uses the LLM, disable it or raise its trigger threshold in Hooks config to reduce labeler calls.
+- **Cooldown** — After timeouts/rate limits, restart gateway and wait 5–10 min before retrying (see command card section 4).
+
+### Applied on Linode (as of 2026-02-20)
+
+- `agents.defaults.timeoutSeconds`: **120**
+- `agents.defaults.model.fallbacks`: **["default"]** (single fallback)
+- `hooks.internal.entries.session-labeler.enabled`: **false**
+- Main workspace AGENTS.md: gift-card flow must not call subagents/sessions_history/sessions_send/session_status after spawn. Backup before changes: `/root/openclaw-stock-home/.openclaw/openclaw.json.bak.pre-llm-fixes`
+
+---
+
 ## 1. Control UI: replies not showing (FIXED)
 
 ### Root cause
@@ -111,18 +137,78 @@ The gateway correctly runs the model, appends the assistant message to the trans
 - `chat.history` does return the full history (including the new message) when called after the run completes; the bug was purely that the UI did not call `chat.history` when it received the `chat` / `state: "final"` event.
 
 ### Fix applied
-A one-line patch was applied to the Control UI bundle so that when a `chat` event with `state: "final"` (or `"aborted"`) is received, the UI also calls the load-history function (`St(e)` in the minified bundle), which fetches `chat.history` and updates `chatMessages`. That makes the new assistant message appear without a manual refresh.
+A two-part patch is applied via `scripts/apply-webchat-display-fix.py`:
 
-**Files patched (in the globally installed package):**
-- Old: `.../node_modules/clawdbot/dist/control-ui/assets/index-Cl-Y9zqE.js` (2026.1.24-3)
-- New: `.../node_modules/openclaw/dist/control-ui/assets/index-DFDgq9AK.js` (2026.1.29)
+1. **Relax runId guard** — `state=final` events are no longer rejected when runIds mismatch (e.g. after WebSocket reconnect). Previously the guard caused early return and the final handler never ran.
+2. **En(e) clears streaming state** — When `chat.history` loads (from final handler or Refresh), `chatRunId`/`chatStream` are cleared so the thinking animation stops.
 
-**Note:** This patch lives inside the npm-installed package. It will be overwritten on the next `npm install -g openclaw` or upgrade. For a permanent fix, the upstream Control UI should be updated to refresh history (or merge the final message from the event) when `state === "final"`.
+**Apply on server (Linode):**
+```bash
+python3 /root/openclaw-stock-home/.openclaw/scripts/apply-webchat-display-fix.py
+# Hard-refresh the browser (Cmd+Shift+R) to load the new bundle
+```
+
+**Strategy analysis:** See `docs/WEBCHAT_RESPONSE_DISPLAY_STRATEGIES.md` for the four-strategy evaluation and rationale.
+
+**Note:** The patch lives inside the npm-installed package. Re-apply after every `openclaw update` or `npm install -g openclaw`.
 
 **Model scanning is NOT affected:** The patch only touches the Control UI bundle (frontend JavaScript). Model discovery happens via `piSdk.discoverModels()` which scans from the agent directory (`~/.openclaw/agents/main/`) and is completely separate from the UI bundle. The model catalog code (`dist/agents/model-catalog.js`, `dist/gateway/server-model-catalog.js`) is untouched.
 
 ### Workaround if you revert the patch
 After sending a message, click the **Refresh** button in the Chat tab (or switch session and back) so the UI calls `chat.history` and the reply appears.
+
+### On the OpenClaw cloud server (clawbot): reply only after Refresh, thinking never stops
+If the reply does not appear until you click the session **Refresh** button, and the **thinking animation stays** until you reload the browser page, the Control UI is not receiving (or not acting on) the `chat` event with `state: "final"`. So:
+
+1. **Message list is never refreshed** → reply is only visible after a manual Refresh (which calls `chat.history`).
+2. **Streaming state is never cleared** → the thinking spinner stays until a full page reload.
+
+**Likely causes on the cloud server:**
+
+- **WebSocket path:** The session proxy must strip `/s/:sessionKey` from the upgrade path and forward `/` or `/ws` to the gateway. If the proxy sent `/s/proxy:xxx/`, the WebSocket would fail and the UI would never get `state: "final"`. Ensure the proxy on the server is the latest version (see §7 Round-robin: WebSocket path stripping).
+- **Session key format:** The gateway broadcasts "final" with session key in canonical form (e.g. `agent:main:proxy:uuid`). If the UI was using a different form (e.g. `proxy:uuid`), it would ignore the event. The proxy must use `SESSION_PREFIX=agent:main:proxy:` (default in current proxy).
+- **Control UI bundle not patched:** The npm-installed Control UI may not call load-history on `state === "final"`. After an `openclaw` upgrade the bundle filename changes and any previous patch is lost. Re-apply the patch (see "Fix applied" above) on the server: find the current bundle under `.../node_modules/openclaw/dist/control-ui/assets/index-*.js` and add a call to the load-history function when the `chat` event has `state: "final"` or `"aborted"`.
+
+**What to do on the Linode:**
+
+1. Confirm the session proxy is up to date (path stripping, `x-openclaw-session-key` on all requests, session key format).
+2. Check proxy logs for `WebSocket upgrade -> session: ... path: /` (path should be `/`, not `/s/...`).
+3. Re-apply the webchat display fix: `python3 /root/openclaw-stock-home/.openclaw/scripts/apply-webchat-display-fix.py` (required after every `openclaw update`).
+
+---
+
+## 1b. Control UI (webchat): user message shows "Conversation info (untrusted metadata)" block
+
+### What you see
+When you send a message (e.g. "hi, what is your name?"), the chat shows a red-bordered box above your text:
+
+```text
+Conversation info (untrusted metadata):
+{ "message_id": "...", "sender": "openclaw-control-ui" }
+[timestamp] hi, what is your name?
+```
+
+### Why it happens
+The gateway stores every user message with an inbound metadata envelope (`message_id`, `sender`). The Control UI renders that envelope as "Conversation info (untrusted metadata)" for transparency (e.g. on Discord it can show channel/thread context). For webchat, the only metadata is `openclaw-control-ui` and a message ID, so it's just noise.
+
+### Fix
+Upstream OpenClaw fixed this by not rendering the metadata block in webchat bubbles (see [openclaw/openclaw#13989](https://github.com/openclaw/openclaw/issues/13989), PRs #14045, #22345, #22346).
+
+- **Verified (2026-02-21):** OpenClaw **2026.2.19-2** (45d9b20) does **not** include the webchat metadata fix. The installed Control UI bundle (`index-CJS46cAv.js`) does not contain the display-layer stripping logic (no `message-extract` / `stripInbound` / “Conversation info” in the bundle). So the metadata box will keep appearing on that version. Check [OpenClaw releases](https://github.com/openclaw/openclaw/releases) for a later release that mentions webchat/inbound metadata (#22345, #22346) and upgrade to that; then restart the gateway.
+- **Until then:** No patch in this repo. A future option is a Control UI bundle patch on the server (like the webchat display fix), re-applied after each `openclaw` upgrade.
+
+---
+
+## 1c. Cloud bot: “Add model to allow-list” — bug or feature?
+
+**From Linode session transcript (2026-02-21):** User tried to use model `fireworks/accounts/fireworks/models/kimi-k2p5`; gateway replied "Model … is not allowed." User asked: "can you add it to the allowed list?" The assistant (Mistral) replied: *"I'm sorry, but I don't have the capability to add items to the allowed list. My functionality is limited to providing information and assistance based on the tools and data I have access to."* That response is a **bug** (model confusion): the agent does have read/write and could edit config; it should ask for permission, not claim it has no capability.
+
+If you asked the Linode webchat bot to add a model to the allow-list and it refused or asked for permission, that is **intended behavior (feature)**, not a bug:
+
+- **Your rules:** Never change server configuration, package, or app version without **explicit permission** (see user rules / AGENTS.md). Adding a model to the allow-list means editing `openclaw.json` (e.g. `agents.defaults.models` or `models.providers`). The bot has **read** and **write** and could do it, but it is correct to refuse or ask for confirmation before changing config.
+- **If the bot said it “doesn’t have the tools” or “can’t edit config”:** That could be the model being overly cautious or misdescribing its capabilities (closer to a **bug** in model behavior). The cloud agent does have the tools to read/write workspace and config files; it is only constrained by policy (no config change without your approval, no gateway restart from chat).
+
+So: **refusing to change config without permission = feature.** Saying it has no tools for it when it does = model confusion (bug).
 
 ---
 
@@ -335,9 +421,132 @@ The error `Tool read not found` or `Tool exec not found` comes from **pi-agent-c
 
 ---
 
+## 5b. "Unknown action exec" when taking screenshots on cloud
+
+### Symptoms
+On the Linode (or any headless cloud workspace), when the user asks for a screenshot of a URL, the agent fails with **"Unknown action exec"** and may then say it cannot take screenshots and suggest manual steps.
+
+### Cause
+The agent is calling the **process** tool with `action: "exec"`. The process tool does **not** support an "exec" action — it only supports: list, poll, log, write, kill, clear, remove. Running shell commands (including mcporter) must be done with the **exec** tool, not the process tool.
+
+### Fix
+1. **Workspace instructions:** Ensure the cloud workspace has clear instructions that the agent reads. Copy **`docs/CLOUD_SCREENSHOT_TOOLS.md`** to the workspace root on the Linode (e.g. `/root/openclaw-stock-home/.openclaw/workspace/CLOUD_SCREENSHOT_TOOLS.md`). That file states: use the **exec** tool for mcporter; never use the process tool with action "exec".
+2. **AGENTS.md:** The repo `AGENTS.md` (and the copy on the server under the workspace) already says under Tools: use **exec** for URL screenshots via mcporter; process has no "exec" action. Keep that in sync on the server (e.g. overwrite `/root/openclaw-stock-home/.openclaw/workspace/AGENTS.md` with the repo version).
+3. **Optional: deny process on cloud main agent** — If the agent keeps using process for "run command" despite the above, you can add `process` to `main.tools.deny` in `/root/openclaw-stock-home/.openclaw/openclaw.json` on the Linode. Then the agent cannot call the process tool at all and must use **exec** for mcporter. Only do this if you do not need the process tool for other tasks (e.g. listing background exec sessions).
+
+### Correct flow for URL screenshots on cloud
+- **exec** with command: `mcporter call playwright.browser_navigate url=<url>`
+- **exec** with command: `mcporter call playwright.browser_take_screenshot` (and optionally `filename=...`)
+
+---
+
+## 5c. Cloud (Linode): git clone / repo development stopped working
+
+### Symptoms
+OpenClaw on the cloud used to clone git repos and continue development (read + exec), but now it doesn’t — the agent may say it has “constraints” or “limited shell access” and offer to try `git clone` without actually running it, or you see **“Tool exec not found”** / **“Tool read not found”**.
+
+### Likely causes (check in order)
+
+1. **main agent has exec or read denied**  
+   On the Linode, the **main** agent may have `tools.deny: ["exec"]` (or exec missing from `tools.allow`). Without **exec**, the agent cannot run `git clone` or any shell command. Without **read**, it cannot read repo files for “continue development”.  
+   - **Check:** On the Linode, `cat /root/openclaw-stock-home/.openclaw/openclaw.json` and look under `agents.list` for the main agent. If you see `"tools": { "deny": ["exec"] }` or an `allow` list that omits `read` or `exec`, that’s the cause.  
+   - **Fix:** Ensure the main agent used by webchat (and proxy sessions) has both **read** and **exec** allowed. Either remove `exec` (and `read` if present) from `tools.deny`, or use an explicit `tools.allow` that includes `read`, `write`, `edit`, `exec`, and any other tools you need (and omit only `browser` if you’re on headless cloud). See **CLOUD_BOT_SELF_FIX_GUIDE.md** §4 for the browser-deny pattern; do **not** deny exec/read for development use.
+
+2. **Session resolving to a restricted agent**  
+   If the session key is wrong or missing, the gateway may resolve to an agent that denies read or exec (e.g. `default_api`).  
+   - **Check:** Gateway or proxy logs for the session key (e.g. `agent:main:proxy:uuid`). For webchat via the session proxy, the proxy must send `x-openclaw-session-key: agent:main:proxy:<uuid>` so the **main** agent is used.  
+   - **Fix:** Update the session proxy so it sends the correct session key and path (see §7). Create a new webchat session and retry.
+
+3. **Exec approvals blocking git on headless cloud**  
+   If `~/.openclaw/exec-approvals.json` exists with `security: "allowlist"` and `ask: "on-miss"` (or `ask: "always"`), then **exec** runs but commands not on the allowlist prompt for approval. On a headless server nobody can approve in the UI, so the run may block or use `askFallback: "deny"` and reject the command.  
+   - **Check:** On the Linode, `cat /root/openclaw-stock-home/.openclaw/exec-approvals.json` (if present). Look at `defaults` and `agents.main` (or the agent used by webchat). If `security` is `allowlist` and `git` (or `/usr/bin/git`) is not in the allowlist, `git clone` will not run without approval.  
+   - **Fix (operator-only):** Either add `git` (or the full path e.g. `/usr/bin/git`) to the allowlist for the main agent in `exec-approvals.json`, or for the cloud-only main agent use a less strict policy (e.g. `security: "full"` or `ask: "off"` with a broad allowlist that includes git). Restart is not required for exec-approvals config changes if the gateway hot-reloads them; otherwise restart via SSH (see command card).
+
+### Quick checklist (run on Linode via SSH)
+
+```bash
+# 1) Main agent must allow read + exec
+grep -A 20 '"id": "main"' /root/openclaw-stock-home/.openclaw/openclaw.json
+# Ensure no tools.deny containing "exec" or "read"; or tools.allow includes both.
+
+# 2) Exec approvals: if present, git must be allowlisted or policy relaxed for main
+test -f /root/openclaw-stock-home/.openclaw/exec-approvals.json && cat /root/openclaw-stock-home/.openclaw/exec-approvals.json
+
+# 3) Session key (from gateway logs when you send a message)
+journalctl --user -u openclaw-gateway.service -n 50 --no-pager | grep -i session
+```
+
+### After fixing
+Have the user start a **new** webchat session and ask again to clone a repo and continue development. The agent should be able to call **exec** (e.g. `git clone ...`) and **read** (repo files) when the main agent has both tools and exec approvals (if any) allow git.
+
+### Full clone → build → deploy workflow
+
+For the complete GitHub repo development and deployment workflow (clone, build, install binary/package, push branches), see **`docs/CLOUD_GIT_DEV_OPS.md`** and the "GitHub Repository Workflow" section in the cloud workspace `AGENTS.md`. Key infrastructure:
+
+- **Git auth:** `git config --global url."git@github.com:vidarbrekke/".insteadOf "https://github.com/vidarbrekke/"` rewrites HTTPS to SSH for owner repos. SSH key at `/root/.ssh/github`.
+- **Build runtimes:** Go 1.23 (`/usr/local/go/bin/go`), Node.js v22, Python 3.12, Make/GCC.
+- **Repo directory:** `/root/openclaw-stock-home/.openclaw/workspace/repositories/<name>`.
+- **Deployment map:** In AGENTS.md — tells the agent where to put built output for each known repo.
+- **Private repo access:** SSH key may only have access to public repos. If private repos fail, see `/root/openclaw-stock-home/.openclaw/workspace/SETUP_GITHUB_ACCESS.md`.
+
+---
+
+## 5d. read tool: "EISDIR: illegal operation on a directory, read"
+
+### Symptoms
+The agent repeatedly calls the **read** tool on a path that is a **directory** (e.g. `repositories/` or `workspace/repositories`). Each call returns: `"error": "EISDIR: illegal operation on a directory, read"`. The tool is allowed; the wrong tool is being used for the task.
+
+### Cause
+OpenClaw’s **read** tool is for **files** only. It does not list directory contents. Using read on a directory causes the runtime to attempt a file read and throw EISDIR.
+
+### Fix
+Use the **ls** tool to list directory contents (e.g. to see which repos exist under `repositories/`). Cloud context (`docs/CLOUD_AGENT_CONTEXT.md`) now states: for directories use **ls**, not read. If the model keeps using read on a directory, start a new session so it gets the updated context, or add a one-line reminder in the prompt/skill that **read** is files-only and **ls** is for listing directories.
+
+---
+
+## 5e. web_fetch returns 429 (rate limit) — run stuck comparing repos / GitHub
+
+### Symptoms
+The agent is comparing two GitHub repos or checking "what changed upstream" and repeatedly calls **web_fetch** on GitHub URLs. Each call returns **429 (Too Many Requests)**. The run appears stuck with many web_fetch errors.
+
+### Cause
+GitHub (and some other hosts) rate-limit requests. Repeated web_fetch of the same or similar URLs triggers 429. The model keeps retrying instead of switching strategy.
+
+### Fix
+Use **local git** and **read** instead of web_fetch for repo comparison. In the cloned repo under `workspace/repositories/<name>`: run **exec** with `git fetch origin` (or the upstream remote), then `git log HEAD..origin/main --oneline`, `git diff origin/main --stat`, and **read** local README or docs. Cloud context (`docs/CLOUD_AGENT_CONTEXT.md`) now tells the agent: for comparing repos/upstream, use exec+git and read; do not retry web_fetch on 429. If the run is already stuck, start a new session and ask again; the agent should then use git + read.
+
+---
+
+## 5f. memory_search loop — "check repo sync" or similar gets stuck
+
+### Symptoms
+The user asks whether a local repo is in sync with the remote (e.g. "check if local repo is in sync with remote", "was it cloned right?"). The agent repeatedly calls **memory_search** with queries like "MK-MCP repository sync status" and gets only irrelevant results (e.g. auto-created memory date files). It never runs **exec** or **git** in the repo.
+
+### Cause
+memory_search searches the **vector index of memory/workspace files**, not the git state of a repo. Git sync status requires **exec** in the repo dir (`git remote -v`, `git fetch`, `git status`). The model (often Mistral Small when used as the only model) keeps retrying memory_search instead of switching strategy.
+
+### Fix
+Use **exec** in `workspace/repositories/<name>`: e.g. `cd workspace/repositories/mcp-motherknitter && git remote -v && git fetch origin && git status`. Cloud context (`docs/CLOUD_AGENT_CONTEXT.md`) now states: for repo sync / git status use exec+git, not memory_search. If the run is already stuck, start a new session. Optionally configure the router to delegate git/repo tasks to a more capable model so it uses exec+git instead of looping on memory_search.
+
+---
+
+## 5g. Default (router) model says "I don't have access to the tools"
+
+### Symptoms
+The primary/default model (e.g. Mistral Small 3.2 24B, used as "router") responds to requests like "add instructions to AGENTS.md" or "edit the router config" with: "I don't have the necessary access to the tools" or "I can guide you on how to approach this" instead of using **read** / **edit** / **write** / **exec**.
+
+### Cause
+The agent has the same tool set regardless of model. Smaller models sometimes (1) refuse or self-limit because they are cautious, or (2) infer from "routing" instructions that they should only delegate and not edit. So they answer in text instead of calling tools.
+
+### Fix
+- **AGENTS.md** now states explicitly: you have full tool access; do not refuse with "I don't have access"; for adding or editing instructions (AGENTS.md, docs, config), do it yourself with read + edit/write; only delegate when the task clearly needs a different model (vision, long coding, etc.).
+- If the default model still refuses, switch model in-session (e.g. `model <fallback>`) for that request, or use a session that already uses a more capable model.
+
+---
+
 ## 6. Useful paths and commands
 
-- **Config:** `~/.openclaw/openclaw.json` (or `~/.clawdbot/clawdbot.json` if symlinked)
+- **Config (Linode stock-home):** `/root/openclaw-stock-home/.openclaw/openclaw.json` (or `~/.openclaw/openclaw.json` if not using stock-home) (or `~/.clawdbot/clawdbot.json` if symlinked)
 - **Device identity:** `~/.openclaw/identity/device.json`
 - **Paired devices:** `~/.openclaw/devices/paired.json`
 - **OpenRouter auth profile:** `~/.openclaw/agents/main/agent/auth-profiles.json`
@@ -380,26 +589,125 @@ You can also add `?token=...` to any path (e.g. `/config?token=...`). After the 
 
 ---
 
-## 7. Round-robin: responses disappear from chat UI
+## 7. Session proxy: responses disappear from chat UI
 
 ### Symptoms
-When using the session proxy with round-robin enabled, assistant replies vanish from the chat UI before they complete or immediately after completing.
+When using the session proxy, assistant replies vanish from the chat UI before they complete or immediately after completing.
 
 ### Root cause (fixed)
 The WebSocket upgrade handler was forwarding the full path (e.g. `/s/proxy:xxx/`) to the gateway. The gateway expects `/` or `/ws`, not `/s/proxy:xxx/`. The WebSocket failed to connect properly, so the Control UI never received the `chat` / `state: "final"` event. Without that event (or with a broken WebSocket), the UI clears the streaming content and doesn't refresh history — the message appears to disappear.
 
 ### Fix applied
 1. **WebSocket path stripping:** The proxy now strips `/s/:sessionKey` from the WebSocket upgrade path before forwarding (same as HTTP). So `/s/proxy:xxx/` → `/`, `/s/proxy:xxx/ws` → `/ws`. The gateway receives the path it expects.
-2. **Request headers:** The proxy also uses `delete` for `content-length` and `transfer-encoding` when buffering the round-robin body, instead of invalid values.
+2. **Request headers:** The proxy uses `delete` for `content-length` and `transfer-encoding` when buffering request bodies, instead of invalid values.
 3. **Session header for all requests:** The proxy now injects `x-openclaw-session-key` for **every** proxied request when a session exists, not just POST to chat.
 4. **Session key format:** The proxy now uses the gateway's canonical format `agent:main:proxy:uuid` (was `proxy:uuid`). The Control UI filters chat events by `sessionKey`; when the gateway broadcasts "final" with `agent:main:proxy:uuid` but the UI had `proxy:uuid`, the event was ignored and history never refreshed.
 
 Update to the latest clawd/openclaw-session-proxy.js and restart the proxy.
 
 ### If it persists
-1. **Verify Control UI fix:** Section 1 above — if replies don't show when state becomes "final", the Control UI may need the history-refresh patch. That can also affect round-robin sessions.
-2. **Try without round-robin:** Start the proxy with `ROUND_ROBIN_MODELS=off ./start-session-proxy.sh`. If responses appear, the issue is round-robin–specific; if not, it's the Control UI or gateway.
+1. **Verify Control UI fix:** Section 1 above — if replies don't show when state becomes "final", the Control UI may need the history-refresh patch.
+2. **Confirm proxy wiring:** Restart the proxy and re-test to isolate proxy vs. Control UI vs. gateway behavior.
 3. **Check proxy logs:** `/tmp/openclaw-proxy.log` — look for `WebSocket upgrade -> session: ... path: /` to confirm path stripping.
+
+---
+
+## 7b. Cloud instance: best approach (recent reply/thinking + browser message)
+
+If the cloud bot has **recently** started (a) not showing replies until session Refresh with the thinking animation stuck until page reload, and/or (b) replying with "The browser control service is not running. Please restart the OpenClaw gateway", treat them as follows.
+
+### Reply/thinking issue (very recent)
+
+- **Cause:** Control UI is not receiving or not acting on the `chat` / `state: "final"` event (see §1 "On the OpenClaw cloud server"). Common after an OpenClaw upgrade (patch in the UI bundle is overwritten) or if the session proxy or path/sessionKey changed.
+- **Best approach (in order):**
+  1. **Session proxy:** Ensure the proxy on the server is the latest version (WebSocket path strip to `/`, session key `agent:main:proxy:uuid`, `x-openclaw-session-key` on all requests). Restart the proxy and check logs for `WebSocket upgrade -> session: ... path: /`.
+  2. **Re-apply Control UI patch:** On the Linode, the history-refresh patch lives inside the installed OpenClaw package and is **overwritten on every upgrade**. Find the current bundle under the global openclaw install (`.../node_modules/openclaw/dist/control-ui/assets/index-*.js`) and re-apply the one-line fix (call load-history when `chat` event has `state: "final"` or `"aborted"`). See §1 "Fix applied" for the pattern.
+  3. **Workaround:** Users can click the Chat tab **Refresh** to load history and see the reply; a full page reload clears the thinking animation until the patch is back in place.
+
+### "Browser control service not running / restart gateway" (trivial)
+
+- **Cause:** The main agent has the `browser` tool allowed. On a headless cloud server the browser/Playwright service does not run. When the agent (or a skill) tries to use the browser tool, OpenClaw returns that error and the model echoes it. The suggested fix ("restart the gateway") is for local use and is wrong on the cloud.
+- **Best approach:** Disable the browser tool for the main agent on the cloud so it never tries and never suggests restarting the gateway for that. In `/root/openclaw-stock-home/.openclaw/openclaw.json`, under `agents.list` for the main agent, add `"tools": { "deny": ["browser"] }` (or use an allow list that omits `browser`). See **CLOUD_BOT_SELF_FIX_GUIDE.md** §4. No gateway restart needed (hot-reload). For browser automation, use a local OpenClaw instance.
+
+---
+
+## Telegram: current setup and next steps
+
+### Status update (supersedes older spawn-based notes for Vidar DM)
+
+As of Feb 2026, the stable production pattern for Vidar Telegram gift-card chat is:
+
+- Route Vidar direct Telegram to `telegram-vidar-proxy`.
+- In proxy, use direct `exec` calls to `mcp-motherknitter` CLI.
+- Do not use `sessions_spawn` for this path.
+- Use MCP `--format json` output and compose one natural-language user reply.
+
+This supersedes earlier notes that relied on `main` + `sessions_spawn` auto-announce behavior for Vidar DM.
+
+### Current state (Linode)
+
+- **Routing:** `telegram-sender-router` hook: Vidar (`5309173712`) → **main** (same agent as webchat); everyone else → **telegram-isolated**. One **stable session** per (agent, channel, sender): `agent:main:telegram:5309173712`. Conversation persists across messages; `/new` resets it.
+- **Gift-card:** Main asks for code → user sends code → main spawns `local-ops` with node CLI → auto-announce delivers balance. Main must not call subagents/sessions_history/sessions_send/session_status after spawn (see main workspace `AGENTS.md`).
+- **Monitoring:** Ops report at `memory/ops-combined-report.md` includes Telegram Routing (vidar_to_main_24h, duplicate_message_id_24h, etc.).
+
+### Current stable routing (Vidar DM)
+
+- Vidar direct Telegram should bind to `telegram-vidar-proxy`.
+- `telegram-vidar-proxy` tool surface should be minimal (`exec`, `read`).
+- Proxy policy should enforce:
+  - one final message per turn
+  - no progress/system relay chatter
+  - no generic "no tools" response for gift-card intent
+  - clarification question on ambiguity
+
+### MCP output modes (agent-friendly)
+
+`mcp-motherknitter` gift-card tools support:
+
+- `--format text`
+- `--format compact`
+- `--format json`
+
+For agent execution paths, prefer `--format json` to reduce parsing errors, accidental field leakage, and token burn from retries.
+
+### Quick diagnosis for duplicate Telegram messages
+
+If duplicates reappear:
+
+1. Confirm Vidar DM binding still points to `telegram-vidar-proxy`.
+2. Confirm proxy is not using `sessions_spawn` for gift-card flows.
+3. Confirm proxy AGENTS policy still bans progress/relay chatter.
+4. Confirm proxy uses MCP `--format json` command templates.
+5. Run a 3-turn smoke test (`lookup`, `update`, `timeline`) and inspect transcript for one reply per turn.
+
+### Telegram gift-card: duplicate messages and two balance amounts (fixed: MCP-only)
+
+**What you may see** after sending a gift card code:
+
+- One line: `✅ Subagent local-ops finished` and e.g. `$53.40`
+- A second line: `Subagent local-ops finished with Balance: 100.00`
+
+So: **two** delivery lines and sometimes **two different** balance amounts (e.g. $53.40 vs 100.00).
+
+**Likely causes:**
+
+1. **Stale announce** — OpenClaw may deliver subagent completion keyed by **Telegram peer**, not by session. A **previous** session’s completion (e.g. "Balance: 100.00") can be delivered again in the **current** session. The amount that matches the code you just sent (or the most recent one) is the one to trust.
+2. **Two delivery paths** — The gateway can send (a) the subagent auto-announce (e.g. "Subagent local-ops finished" plus the tool result like "$53.40"), and (b) another message if the parent agent also replies after spawn, producing duplicate or redundant lines.
+
+**What to do:**
+
+- **Single reply:** Main's `AGENTS.md` already says: after `sessions_spawn` for gift-card, do not send any follow-up. User gets the balance only from the auto-announce.
+- **Which balance to trust:** Use the balance that matches the code you just sent, or the last one in the thread.
+- **One clean "Balance: $X.XX" in Telegram:** Would require upstream OpenClaw changes (e.g. subagent announce format, or session-keyed delivery so the previous session’s announce is not re-delivered). No config-only fix in this repo.
+
+**Fix applied (Feb 2026):** Telegram gift-card now uses **MCP only** (mcporter), not sessions_spawn, so the user gets a single reply. See [TELEGRAM_GIFTCARD_MCP_ONLY.md](TELEGRAM_GIFTCARD_MCP_ONLY.md). Patch script: `scripts/patch-telegram-giftcard-mcp-only.py` (run on the Linode). If duplicates reappear, re-run the patch so server AGENTS.md has "Telegram Gift Card Handling (Hard Rule — MCP only)".
+
+### Next steps
+
+1. **Verify flow** — In Telegram: `/new`, then “can you check the balance on a giftcard for me?” → reply should ask for code only. Send code → you get at least one reply with the balance; duplicate lines or two amounts are the known quirk above. If you see a stale balance in a new session before sending a code, that's the same peer-keyed delivery quirk; the agent is instructed not to echo it and to ask for the code. 
+2. **Stale announce** — If the gateway sometimes delivers a previous session’s subagent completion to a new session (same Telegram peer), that’s likely delivery keyed by peer not session. No config fix in this repo; options are document, work around (main asks for code), or report upstream to OpenClaw.
+3. **Watch assertions** — Check `memory/ops-combined-report.md` (or ops-guard skill) for “Telegram Routing Assertions” and fix any breach (e.g. duplicate_message_id_24h &gt; 25).
+4. **Optional** — If you want Telegram-specific formatting (e.g. no markdown tables), add a short note in main `AGENTS.md` under platform formatting (Discord/WhatsApp style already there).
 
 ---
 
@@ -454,7 +762,7 @@ After changing config, restart the gateway:
 ## 9. Telegram: `setMyCommands failed: 400 Bad Request: BOT_COMMANDS_TOO_MUCH`
 
 ### Root cause
-OpenClaw registers native slash commands (e.g. `/model`, `/round-robin`, skill commands) via `setMyCommands`. Skills add many commands; with many skills you can exceed the Telegram Bot API limit (100 commands per scope). Even after truncation to 100, some setups still get this error (possibly due to scope or payload limits).
+OpenClaw registers native slash commands (e.g. `/model`, `/context`, skill commands) via `setMyCommands`. Skills add many commands; with many skills you can exceed the Telegram Bot API limit (100 commands per scope). Even after truncation to 100, some setups still get this error (possibly due to scope or payload limits).
 
 ### Fix applied
 Disable skill commands for Telegram in `~/.openclaw/openclaw.json`:
@@ -471,7 +779,7 @@ Disable skill commands for Telegram in `~/.openclaw/openclaw.json`:
 }
 ```
 
-This keeps core commands (`/model`, `/round-robin`, `/context`, etc.) but excludes skill-specific commands, typically reducing the count to ~20–40.
+This keeps core commands (`/model`, `/context`, etc.) but excludes skill-specific commands, typically reducing the count to ~20–40.
 
 ### If error persists
 Use a more aggressive option to disable all native command registration:
@@ -517,7 +825,7 @@ This behavior is in the **openclaw** package (e.g. `dist/agents/model-catalog.js
 1. **Use a model with ≥16k context for the main agent**
    - In `~/.openclaw/openclaw.json`, set the default model to one with context ≥16k (e.g. another Ollama model, or an API model).
    - Example: `agents.defaults.model` (or the equivalent in your config) to something like `ollama/mistral` (if that variant has 16k+), or `openrouter/...`, etc.
-2. **If using round-robin or session overrides**
+2. **If using session overrides**
    - Ensure `ollama/mistral-small-8k` is not the only or first choice for the main agent, or remove it from the list so the gateway can pick an allowed model.
 3. **If you must use mistral-small-8k**
    - You would need a change in the openclaw package (e.g. a configurable minimum context or an override to allow smaller models). That is outside this repo; consider opening an issue or PR on the OpenClaw upstream.
@@ -679,3 +987,38 @@ The problem is between Telegram and the gateway, or between the gateway and the 
 2. **Tool runs but final reply not delivered** — If the audit log **does** show a `giftcard_lookup` at that time, the MCP ran; the problem is that the gateway never sends the model’s final reply (with the balance) back to Telegram. Check gateway logs for that run (e.g. `chat.send` with `deliver` or Telegram delivery) and any errors after the tool returns.
 
 **Quick check:** Run the same question in **Control UI** (same agent/session type as Telegram). If you get the full answer there but not in Telegram, the issue is delivery to the Telegram channel. If you also get the truncated “Let me look that up…” with no balance in Control UI, the issue is MCP invocation or tool execution for that run.
+
+---
+
+## 13. Webchat session healthcheck (disconnect spikes)
+
+If webchat replies appear to stall, require refreshes, or the spinner gets stuck, run:
+
+```bash
+/root/openclaw-stock-home/.openclaw/scripts/check-webchat-session-health.py --json
+```
+
+What it checks:
+
+- `openclaw-gateway.service` and `openclaw-session-proxy.service` are active
+- Gateway/proxy ports are listening (`18789`, `3010`)
+- Last 30 minutes of gateway logs for webchat close spikes:
+  - `1006` abnormal disconnects
+  - `1008` auth/pairing disconnects
+  - `1012` restart disconnects
+
+Exit codes:
+
+- `0` healthy
+- `2` warning
+- `3` critical
+
+### Disconnect cause analyzer
+
+To identify the top root causes behind `1008`/`1012`:
+
+```bash
+/root/openclaw-stock-home/.openclaw/scripts/analyze-webchat-disconnect-causes.py --window-minutes 120 --json
+```
+
+This groups disconnects by reason (e.g. `pairing required`, `device token mismatch`, `service restart`) and prints suggested fixes.
