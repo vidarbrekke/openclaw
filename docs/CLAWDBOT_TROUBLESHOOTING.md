@@ -298,7 +298,25 @@ All model scanning/inclusion/approval logic is intact.
 
 ---
 
-## 4. Kimi-K2.5 tool calling issues: ": 0," prefix corrupting tool parameters
+## 4. Model drift: agent uses Anthropic instead of OpenRouter
+
+### Symptoms
+- You only use OpenRouter (and e.g. Perplexity for search), but the gateway reports **"No API key found for provider anthropic"** and all queries fail or are unresponsive.
+- Logs show the agent model as anthropic/... instead of openrouter/....
+
+### Cause
+OpenClaw resolves the configured model alias (e.g. `primary: "router"`) from `agents.defaults.models`. If that resolution fails, it falls back to the **built-in default provider "anthropic"** (and default model). So the drift is: something prevented the alias index from being built or used, so the code fell back to anthropic.
+
+Common cause: **invalid config**. If `openclaw.json` contains an unrecognized key (e.g. `tools.web.search.fallback`), config validation can fail. On reload or restart the gateway may then load a stripped or default config, so `agents.defaults.models` is missing in memory and the alias "router" is not found → fallback to anthropic.
+
+### Fix
+1. **Remove invalid keys** from `openclaw.json` (e.g. remove `tools.web.search.fallback` if present). Check logs for "Unrecognized key" or "config reload skipped (invalid config)".
+2. Ensure **`agents.defaults.model.primary`** and **`agents.defaults.models`** are present with your OpenRouter model(s) and alias (e.g. `primary: "router"` and an entry with `alias: "router"`).
+3. **Restart the gateway** so it loads the full config. After restart, logs should show e.g. `[gateway] agent model: openrouter/mistralai/...` not anthropic.
+
+---
+
+## 5. Kimi-K2.5 tool calling issues: ": 0," prefix corrupting tool parameters
 
 ### Root cause
 **Kimi-K2.5 (via OpenRouter) has a known bug** where it adds a `": 0,"` prefix to tool call parameters, corrupting them and causing tool calls to fail. This is a **model-level issue**, not an OpenClaw bug. The error message "The : 0, prefix keeps corrupting my tool parameters. This appears to be a session-level issue that I cannot resolve from within the conversation" is **coming from the model itself** - Kimi-K2.5 is reporting that it cannot fix its own tool call formatting.
@@ -365,7 +383,7 @@ This is a documented issue with Kimi K2/K2.5 models when used through OpenRouter
 
 ---
 
-## 5. "Tool [name] not found" (read, exec, etc.)
+## 6. "Tool [name] not found" (read, exec, etc.)
 
 ### Root cause
 The error `Tool read not found` or `Tool exec not found` comes from **pi-agent-core** when the agent tries to execute a tool call, but that tool is **not in the resolved tool set** passed to the agent loop. The model receives tool definitions (e.g. from the system prompt) and generates tool calls, but at execution time the gateway's tool registry doesn't include that tool.
@@ -544,7 +562,7 @@ The agent has the same tool set regardless of model. Smaller models sometimes (1
 
 ---
 
-## 6. Useful paths and commands
+## 7. Useful paths and commands
 
 - **Config (Linode stock-home):** `/root/openclaw-stock-home/.openclaw/openclaw.json` (or `~/.openclaw/openclaw.json` if not using stock-home) (or `~/.clawdbot/clawdbot.json` if symlinked)
 - **Device identity:** `~/.openclaw/identity/device.json`
@@ -589,7 +607,7 @@ You can also add `?token=...` to any path (e.g. `/config?token=...`). After the 
 
 ---
 
-## 7. Session proxy: responses disappear from chat UI
+## 8. Session proxy: responses disappear from chat UI
 
 ### Symptoms
 When using the session proxy, assistant replies vanish from the chat UI before they complete or immediately after completing.
@@ -711,7 +729,7 @@ So: **two** delivery lines and sometimes **two different** balance amounts (e.g.
 
 ---
 
-## 8. Telegram: not receiving messages (channel not starting)
+## 9. Telegram: not receiving messages (channel not starting)
 
 ### Root cause
 The OpenClaw config had no `channels.telegram` section. Without it, the gateway never starts the Telegram provider (which does long-polling via grammY `getUpdates`). There is no separate cron job or daemon—Telegram runs inside the gateway process.
@@ -759,7 +777,7 @@ After changing config, restart the gateway:
 
 ---
 
-## 9. Telegram: `setMyCommands failed: 400 Bad Request: BOT_COMMANDS_TOO_MUCH`
+## 10. Telegram: `setMyCommands failed: 400 Bad Request: BOT_COMMANDS_TOO_MUCH`
 
 ### Root cause
 OpenClaw registers native slash commands (e.g. `/model`, `/context`, skill commands) via `setMyCommands`. Skills add many commands; with many skills you can exceed the Telegram Bot API limit (100 commands per scope). Even after truncation to 100, some setups still get this error (possibly due to scope or payload limits).
@@ -801,7 +819,7 @@ Restart the gateway after config changes: `launchctl kickstart -k gui/$UID/ai.op
 
 ---
 
-## 10. Gateway startup: "blocked model (context window too small)" / FailoverError
+## 11. Gateway startup: "blocked model (context window too small)" / FailoverError
 
 ### Symptoms
 On gateway start you see:
@@ -837,7 +855,7 @@ This behavior is in the **openclaw** package (e.g. `dist/agents/model-catalog.js
 
 ---
 
-## 11. LLM request rejected: unexpected `tool_use_id` in `tool_result` blocks
+## 12. LLM request rejected: unexpected `tool_use_id` in `tool_result` blocks
 
 ### Symptoms
 
@@ -938,7 +956,7 @@ To reach the OpenClaw dashboard on a cloud server by IP (no Tailscale/SSH tunnel
 
 ---
 
-## 12. Telegram: message sent but no reply (or reply after many minutes)
+## 13. Telegram: message sent but no reply (or reply after many minutes)
 
 ### Symptoms
 You send a question via Telegram (e.g. “What’s the balance on gift card SZ58-RH4G-J5YF-PVYH?”) and get no answer, or the answer arrives only after several minutes.
@@ -990,7 +1008,7 @@ The problem is between Telegram and the gateway, or between the gateway and the 
 
 ---
 
-## 13. Webchat session healthcheck (disconnect spikes)
+## 14. Webchat session healthcheck (disconnect spikes)
 
 If webchat replies appear to stall, require refreshes, or the spinner gets stuck, run:
 

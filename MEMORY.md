@@ -1,5 +1,10 @@
 # MEMORY.md - Long-Term Memory
 
+## Cloud search quick command
+
+- On Linode, web lookup from chat should use: `exec` -> `perplexity-search "your question"`.
+- Do not call `mcporter` directly from model output; the wrapper handles argument shape safely.
+
 ## Cross-Service Capability Gap Analysis & Implementation - COMPLETE ✅
 
 **Date:** 2026-02-17  

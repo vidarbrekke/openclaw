@@ -32,6 +32,14 @@ If the service uses default `openclaw gateway` with no env, OpenClaw uses `$HOME
 
 **Symlink (token sync):** On this Linode, `/root/.openclaw/openclaw.json` is a **symlink** to `/root/openclaw-stock-home/.openclaw/openclaw.json`. That way `openclaw gateway restart` and `openclaw gateway install --force` work without setting `OPENCLAW_CONFIG_PATH`, and you avoid "Config token differs from service token" (the CLI and the service both see the same config). Do not replace the symlink with a real file unless you intend to use a separate default config.
 
+**State dir:** The gateway unit sets `OPENCLAW_STATE_DIR=/root/openclaw-stock-home/.openclaw` so devices, identity, and other state live in stock-home (same as config).
+
+**Required: `gateway.mode`:** The gateway will not start without `gateway.mode: "local"` in `openclaw.json`. If the service keeps exiting with "Gateway start blocked: set gateway.mode=local", add or restore that key (e.g. after a config restore or edit). Do not remove it.
+
+**Control UI (dashboard):** To use the web dashboard without device pairing, open the URL with the gateway token: `https://<LINODE_IP_OR_HOST>/?token=<GATEWAY_TOKEN>`. The token is in `openclaw.json` under `gateway.auth.token` (or run on the server: `openclaw config get gateway.auth.token`). The Linode has `gateway.controlUi.dangerouslyDisableDeviceAuth: true` so token-only auth works; keep this only if you accept that anyone with the token can open the UI.
+
+**Telegram:** The Telegram channel is independent of the Control UI; it uses the bot token in config/env. If the gateway is up and the Telegram channel is configured, the bot should receive and send messages without any dashboard pairing.
+
 **C. End-to-end (chat)** — open the OpenClaw dashboard/webchat that talks to this Linode. Ask the agent:
 
 - “What’s the first line of AGENTS.md?” or “Do you have access to AGENTS.md?”
@@ -51,6 +59,23 @@ Expected guard posture:
 - `guard_policy_mode: enabled`
 - `runtime_patch_fallback: disabled`
 - `elevated.webchat_allow: []`
+
+**If all queries are unresponsive:** Check logs for `No API key found for provider`. The agent needs an API key for the model provider (e.g. OpenRouter or Anthropic). On the Linode, add the key to `/root/openclaw-stock-home/.openclaw/.env` (e.g. `OPENROUTER_API_KEY=...` or `ANTHROPIC_API_KEY=...`), then restart the gateway. The backup does not include `.env`; after a restore you must re-add provider keys.
+
+**Perplexity MCP (advanced Sonar params):** The Linode uses Perplexity MCP via `mcporter` (server `perplexity`). The main agent has **`web_fetch` denied** in `openclaw.json` (`main.tools.deny`: `web_search`, `web_fetch`) so search must go through **exec** + mcporter. Do not re-enable `web_fetch` for main without documenting why; the drift checker expects it denied.
+
+**Post-upgrade drift check (safe model):** from local repo root, run:
+```bash
+python3 scripts/check-cloud-search-routing.py
+```
+This verifies: `gateway.mode=local`, built-in `tools.web.search.enabled=false`, Perplexity MCP server is configured, and Perplexity MCP tools are reachable.
+Shortcut wrapper:
+```bash
+./scripts/post-upgrade-cloud-check.sh
+```
+Optional overrides: `HOST=root@<ip-or-host> SSH_KEY=~/.ssh/<key> ./scripts/post-upgrade-cloud-check.sh`
+Force local mode (when running directly on Linode): `LOCAL=1 ./scripts/post-upgrade-cloud-check.sh`
+If running directly on Linode workspace instead of via SSH from local, use: `python3 scripts/check-cloud-search-routing.py --local`.
 
 ## 2) Check for restart-induced stuck turns
 

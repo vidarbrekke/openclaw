@@ -8,6 +8,13 @@
       "command": "bash",
       "args": ["-c", "cd /root/openclaw-stock-home/.openclaw/playwright-mcp && exec node node_modules/@playwright/mcp/cli.js"],
       "env": { "PLAYWRIGHT_BROWSERS_PATH": "/root/.cache/ms-playwright" }
+    },
+    "perplexity": {
+      "command": "bash",
+      "args": [
+        "-lc",
+        "set -a; [ -f /root/openclaw-stock-home/.openclaw/.env ] && . /root/openclaw-stock-home/.openclaw/.env; set +a; exec npx -yq @perplexity-ai/mcp-server"
+      ]
     }
   },
   "imports": []

@@ -37,4 +37,16 @@ $RSYNC_SSH "$SSH_HOST" "mkdir -p $REMOTE_WORKSPACE/repositories $REMOTE_WORKSPAC
 echo "=== If server has no mcporter.json, copy from linode example ==="
 $RSYNC_SSH "$SSH_HOST" "test -f $REMOTE_WORKSPACE/config/mcporter.json || ( test -f $REMOTE_WORKSPACE/config/mcporter.linode.example.json && cp $REMOTE_WORKSPACE/config/mcporter.linode.example.json $REMOTE_WORKSPACE/config/mcporter.json ) || true"
 
+echo "=== Restore cloud identity (Naima/Vidar) after rsync overwrite ==="
+"$SCRIPT_DIR/linode-restore-identity.sh" 2>/dev/null || true
+
+echo "=== Install perplexity-search wrapper on Linode ==="
+$RSYNC_SSH "$SSH_HOST" "install -m 0755 $REMOTE_WORKSPACE/scripts/perplexity-search.sh /usr/local/bin/perplexity-search" || true
+
+echo "=== Install GitHub repo verification helper on Linode ==="
+$RSYNC_SSH "$SSH_HOST" "install -m 0755 $REMOTE_WORKSPACE/scripts/clawd-verify-github-repo.sh /usr/local/bin/clawd-verify-github-repo" || true
+
+echo "=== Install git repo discovery helper on Linode ==="
+$RSYNC_SSH "$SSH_HOST" "install -m 0755 $REMOTE_WORKSPACE/scripts/clawd-find-git-repos.sh /usr/local/bin/clawd-find-git-repos" || true
+
 echo "=== Done. Workspace at $REMOTE_WORKSPACE ==="

@@ -14,7 +14,7 @@ Before doing anything else:
 2. Read `USER.md` — this is who you're helping
 3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
 4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
-5. **If you are the cloud/Linode instance** (e.g. workspace path contains `openclaw-stock-home` or you have no local display): Also read `docs/CLOUD_AGENT_CONTEXT.md` once per session for paths, rules, and where to look when things break.
+5. **If you are the cloud/Linode instance** (e.g. cwd is `/root/.openclaw/workspace`, or workspace path contains `openclaw-stock-home`, or you have no local display): **Read `docs/CLOUD_AGENT_CONTEXT.md` first** — it defines your web search path (exec + Perplexity MCP), when to use it, and when not to use web_fetch.
 
 Don't ask permission. Just do it.
 
@@ -126,6 +126,8 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 ## Tools
 
 **You have full tool access.** You can read, write, edit, exec, grep, ls, and use other tools provided by the system. Do **not** refuse with "I don't have access to the tools" or "I can't fulfill this" when the request is to edit files, add instructions, or run commands—use the tools. Only delegate or hand off when the task clearly needs a different **model** (e.g. vision, long coding, or heavier reasoning); for adding instructions to AGENTS.md, docs, or config, do it yourself with **read** and **edit** (or **write**).
+
+**Cloud (cwd `/root/.openclaw/workspace` or no local display):** You **can** search the web. Use **exec** with `mcporter call perplexity.perplexity_ask` (or `perplexity_search` / `perplexity_reason`) for any "search the web," "compare models," or "pricing" request. **Never** say you don't have web search capability. Read `docs/CLOUD_AGENT_CONTEXT.md` for when to use Perplexity MCP vs web_fetch.
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`. Cloud-specific tool details (mcporter, browser alternatives) are in `docs/CLOUD_AGENT_CONTEXT.md`.
 
